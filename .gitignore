@@ -1,0 +1,13 @@
+# Environment variables
+.env
+
+# Uploaded resumes
+/uploads/
+
+# Bytecode and cache
+__pycache__/
+*.py[cod]
+
+# VSCode or other editor configs (optional)
+.vscode/
+
