@@ -130,12 +130,18 @@ async def analyze_resume_with_gemini(resume_text: str) -> dict:
     if not resume_text: return {}
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     prompt = (
-        "Analyze the following resume text. Perform two tasks and return the result as a single, valid JSON object. "
-        "Do not include any text or formatting outside of the JSON structure.\n\n"
-        "1. **Generate a Job Title**: Create a descriptive, specific job title that summarizes the candidate's expertise (e.g., 'Senior Backend & Django Developer with AI Integration Skills').\n\n"
-        "2. **Extract Detailed Information**: Extract the user's full name, email, phone, a list of key skills, and summaries of their experience and education.\n\n"
-        "The final JSON object MUST have this structure:\n"
-        "{\"suggestedJobTitle\": \"...\", \"details\": {\"fullName\": \"...\", \"email\": \"...\", \"phone\": \"...\", \"keySkills\": [...], \"experienceSummary\": \"...\", \"educationSummary\": \"...\"}}\n\n"
+        "Analyze the following resume text. Your task is to extract two specific pieces of information "
+        "and return them as a single, valid JSON object. Do not include any text, notes, or formatting "
+        "outside of the final JSON structure.\n\n"
+        "1.  **Detect Role**: Identify the candidate's primary professional role. Classify it as one of the following: "
+        "'Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'Data Scientist', 'UI/UX Designer', "
+        "'Product Manager', or a similar concise professional title based on their core skills.\n\n"
+        "2.  **Detect Location**: Extract the city and country from the candidate's contact information. If no location is found, return null.\n\n"
+        "The JSON object MUST have exactly these two keys:\n"
+        "{\n"
+        "  \"detectedRole\": \"[The role you identified]\",\n"
+        "  \"detectedLocation\": \"[The location you extracted with city and country]\"\n"
+        "}\n\n"
         f"Resume Text:\n---\n{resume_text}"
     )
     try:
