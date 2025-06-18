@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
+from sqlalchemy import create_engine,or_
 
 # --- File parsing libraries ---
 import pdfplumber
@@ -25,9 +26,10 @@ import google.generativeai as genai
 # --- Project-specific imports ---
 # These import from your other project files: 
 # auth.py, database.py, models.py, schemas.py
-import auth
 import models
-import schemas
+from models import User, Job
+from schemas import UserCreate, UserSchema, Token, JobCreate, JobSchema, JobSearchSchema
+from auth import get_password_hash, verify_password, create_access_token, oauth2_scheme, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from database import SessionLocal, engine
 
 # --- Initial Setup ---
@@ -37,96 +39,54 @@ load_dotenv()
 models.Base.metadata.create_all(bind=engine)
 
 # Configure the Gemini AI client
-try:
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-except Exception as e:
-    print(f"Error configuring Gemini API: {e}")
-
-app = FastAPI(
-    title="Remote Job Finder API",
-    description="API for analyzing resumes and managing job data.",
-    version="1.0.0"
-)
-
-# --- CORS Middleware ---
-# Allows your React frontend to communicate with this backend
-origins = ["http://localhost", "http://localhost:3000"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost", "http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+try: genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+except Exception as e: print(f"Error configuring Gemini API: {e}")
 
 # --- Dependencies ---
 def get_db():
-    """Dependency to get a database session for each request."""
     db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    try: yield db
+    finally: db.close()
 
 def get_user(db: Session, email: str):
-    """Utility function to retrieve a user from the database by email."""
-    return db.query(models.User).filter(models.User.email == email).first()
+    return db.query(User).filter(User.email == email).first()
 
-async def get_current_active_user(token: str = Depends(auth.oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
-    """
-    Dependency to get the current authenticated user from a JWT token.
-    This protects endpoints.
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
     try:
-        payload = jwt.decode(token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-        token_data = schemas.TokenData(email=email)
+        if email is None: raise credentials_exception
     except JWTError:
         raise credentials_exception
-    
-    user = get_user(db, email=token_data.email)
-    if user is None or not user.is_active:
-        raise credentials_exception
+    user = get_user(db, email=email)
+    if user is None or not user.is_active: raise credentials_exception
     return user
 
-# --- Helper Functions ---
+async def get_current_admin_user(current_user: User = Depends(get_current_active_user)):
+    """New dependency to ensure the user is an admin."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough privileges")
+    return current_user
+
+# --- Helper Functions (Text Extraction & AI Analysis) ---
 def extract_text_from_file(file: UploadFile) -> str:
-    """Extracts text from various file types (PDF, DOCX, HTML, RTF, TXT)."""
-    # This function remains the same as in the previous version
     filename = file.filename
     content = file.file.read()
     text = ""
     try:
-        if filename.endswith(".pdf"):
-            with pdfplumber.open(io.BytesIO(content)) as pdf:
-                text = "".join([(page.extract_text() or "") + "\n" for page in pdf.pages])
-        elif filename.endswith(".docx"):
-            doc = docx.Document(io.BytesIO(content))
-            text = "\n".join([para.text for para in doc.paragraphs])
-        elif filename.endswith(".html"):
-            soup = BeautifulSoup(content, "html.parser")
-            text = soup.get_text(separator="\n")
-        elif filename.endswith(".rtf"):
-            text = rtf_to_text(content.decode('utf-8', errors='ignore'))
-        elif filename.endswith(".txt"):
-            text = content.decode('utf-8', errors='ignore')
-        elif filename.endswith(".doc"):
-            raise HTTPException(status_code=400, detail="Legacy .doc files are not supported. Please convert to .docx or .pdf.")
+        if filename.endswith(".pdf"): text = "".join([(p.extract_text() or "") + "\n" for p in pdfplumber.open(io.BytesIO(content)).pages])
+        elif filename.endswith(".docx"): text = "\n".join([p.text for p in docx.Document(io.BytesIO(content)).paragraphs])
+        elif filename.endswith(".html"): text = BeautifulSoup(content, "html.parser").get_text(separator="\n")
+        elif filename.endswith(".rtf"): text = rtf_to_text(content.decode('utf-8', errors='ignore'))
+        elif filename.endswith(".txt"): text = content.decode('utf-8', errors='ignore')
+        else: raise HTTPException(status_code=400, detail=f"Unsupported file type: {filename}")
         return text
-    except Exception as e:
-        print(f"Error extracting text from {filename}: {e}")
-        raise HTTPException(status_code=500, detail=f"Could not process file: {filename}")
+    except Exception as e: raise HTTPException(status_code=500, detail=f"Could not process file {filename}: {e}")
 
 async def analyze_resume_with_gemini(resume_text: str) -> dict:
-    """Uses a single AI call to classify and extract resume details."""
-    # This function also remains the same
     if not resume_text: return {}
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     prompt = (
@@ -140,77 +100,59 @@ async def analyze_resume_with_gemini(resume_text: str) -> dict:
         "The JSON object MUST have exactly these two keys:\n"
         "{\n"
         "  \"detectedRole\": \"[The role you identified]\",\n"
-        "  \"detectedLocation\": \"[The location you extracted with city and country]\"\n"
-        "}\n\n"
-        f"Resume Text:\n---\n{resume_text}"
-    )
+        "  \"detectedLocation\": \"[The location you extracted city and country]\"\n")
     try:
         response = await model.generate_content_async(prompt)
         cleaned_text = response.text.strip().replace("```json", "").replace("```", "")
         return json.loads(cleaned_text)
-    except Exception as e:
-        print(f"Error calling or parsing Gemini response: {e}")
-        return {"error": "Failed to analyze resume."}
+    except Exception as e: return {"error": f"Failed to analyze resume: {e}"}
 
 # --- API Endpoints ---
-
-# --- Authentication Endpoints ---
-@app.post("/register/", response_model=schemas.UserSchema, tags=["Authentication"])
-def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    """Registers a new user."""
-    db_user = get_user(db, email=user.email)
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    hashed_password = auth.get_password_hash(user.password)
-    db_user = models.User(email=user.email, hashed_password=hashed_password)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+@app.post("/register/", response_model=UserSchema, tags=["Authentication"])
+def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    if get_user(db, email=user.email): raise HTTPException(status_code=400, detail="Email already registered")
+    db_user = User(email=user.email, hashed_password=get_password_hash(user.password))
+    db.add(db_user); db.commit(); db.refresh(db_user)
     return db_user
 
-@app.post("/token", response_model=schemas.Token, tags=["Authentication"])
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Provides an access token for a valid user."""
+@app.post("/token", response_model=Token, tags=["Authentication"])
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = get_user(db, email=form_data.username)
-    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
-    access_token = auth.create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    token = create_access_token(data={"sub": user.email}, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    return {"access_token": token, "token_type": "bearer"}
 
-# --- User Endpoints ---
-@app.get("/users/me/", response_model=schemas.UserSchema, tags=["Users"])
-async def read_users_me(current_user: models.User = Depends(get_current_active_user)):
-    """Fetches the current logged-in user's details."""
+@app.get("/users/me/", response_model=UserSchema, tags=["Users"])
+async def read_current_user(current_user: User = Depends(get_current_active_user)):
     return current_user
 
-# --- Resume Analysis Endpoint ---
 @app.post("/resume/analyze/", tags=["Resume"])
-async def upload_and_analyze_resume(resume: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
-    """Analyzes an uploaded resume file for a logged-in user."""
-    ALLOWED_EXTENSIONS = {".pdf", ".docx", ".html", ".rtf", ".txt"}
-    file_ext = os.path.splitext(resume.filename)[1].lower()
-    if file_ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Invalid file type. Supported types are: {', '.join(ALLOWED_EXTENSIONS)}")
+async def analyze_resume(resume: UploadFile = File(...), current_user: User = Depends(get_current_active_user)):
+    resume_text = extract_text_from_file(resume)
+    if not resume_text: raise HTTPException(status_code=400, detail="Could not extract text from file.")
+    analysis = await analyze_resume_with_gemini(resume_text)
+    if "error" in analysis: raise HTTPException(status_code=500, detail=analysis["error"])
+    return JSONResponse(content={"message": "Resume analyzed successfully.", "analysis": analysis})
+
+@app.post("/jobs/", response_model=JobSchema, tags=["Jobs (Admin)"])
+def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: User = Depends(get_current_admin_user)):
+    """Creates a new job posting. Requires admin privileges."""
+    db_job = Job(**job.model_dump())
+    db.add(db_job); db.commit(); db.refresh(db_job)
+    return db_job
+
+@app.post("/jobs/search/", response_model=List[JobSchema], tags=["Jobs"])
+def search_jobs(search: JobSearchSchema, db: Session = Depends(get_db)):
+    """Searches for jobs based on skills, location, and seniority level."""
+    query = db.query(Job)
+    if search.location:
+        query = query.filter(Job.location.ilike(f"%{search.location}%"))
+    if search.seniority_level:
+        query = query.filter(Job.seniority_level.ilike(f"%{search.seniority_level}%"))
+    if search.skills:
+        # This creates a search condition for each skill in the title or description
+        skill_filters = [or_(Job.title.ilike(f"%{skill}%"), Job.description.ilike(f"%{skill}%")) for skill in search.skills]
+        query = query.filter(or_(*skill_filters))
     
-    try:
-        resume_text = extract_text_from_file(resume)
-        if not resume_text:
-            raise HTTPException(status_code=400, detail="Could not extract text from the uploaded file.")
-        
-        analysis_result = await analyze_resume_with_gemini(resume_text)
-        if "error" in analysis_result:
-            raise HTTPException(status_code=500, detail=analysis_result["error"])
-        
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
-
-    return JSONResponse(content={"message": "Resume analyzed successfully.", "analysis": analysis_result})
-
-# --- Job Endpoints ---
-@app.get("/jobs/", response_model=List[schemas.JobSchema], tags=["Jobs"])
-def read_jobs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Retrieves a list of all jobs from the database with pagination."""
-    jobs = db.query(models.Job).offset(skip).limit(limit).all()
-    return jobs
+    return query.all()

@@ -11,9 +11,9 @@ class Job(Base):
     location = Column(String)
     description = Column(Text)
     apply_link = Column(String)
-    mode = Column(String)
+    mode = Column(String) # 'Full-time', 'Part-time', etc.
     salary = Column(String, nullable=True)
-    job_type = Column(String)
+    seniority_level = Column(String) # 'Entry-Level', 'Senior', etc.
 
 class User(Base):
     __tablename__ = "users"
@@ -21,3 +21,4 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
