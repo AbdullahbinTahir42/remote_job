@@ -38,6 +38,9 @@ class JobSchema(JobBase):
     class Config: from_attributes = True
 
 class JobSearchSchema(BaseModel):
+    """UPDATED: This schema now accepts all the user's preferences from the frontend."""
     skills: List[str] = []
     location: Optional[str] = None
     seniority_level: Optional[str] = None
+    salary: Optional[str] = None
+    mode: Optional[str] = None

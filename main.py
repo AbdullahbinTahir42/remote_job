@@ -87,8 +87,23 @@ def extract_text_from_file(file: UploadFile) -> str:
     except Exception as e: raise HTTPException(status_code=500, detail=f"Could not process file {filename}: {e}")
 
 async def analyze_resume_with_gemini(resume_text: str) -> dict:
-    if not resume_text: return {}
+    """
+    Uses Google Gemini to extract structured JSON information from resume text.
+    This is the corrected and integrated version of your function.
+    """
+    if not resume_text:
+        return {}
+
+    # Initialize the Gemini model
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+    # Define the generation configuration to enforce JSON output
+    # This is the most reliable way to get a clean JSON response.
+    generation_config = genai.types.GenerationConfig(
+        response_mime_type="application/json"
+    )
+
+    # The prompt now correctly includes the resume_text variable
     prompt = (
         "Analyze the following resume text. Your task is to extract two specific pieces of information "
         "and return them as a single, valid JSON object. Do not include any text, notes, or formatting "
@@ -100,12 +115,24 @@ async def analyze_resume_with_gemini(resume_text: str) -> dict:
         "The JSON object MUST have exactly these two keys:\n"
         "{\n"
         "  \"detectedRole\": \"[The role you identified]\",\n"
-        "  \"detectedLocation\": \"[The location you extracted city and country]\"\n")
+        "  \"detectedLocation\": \"[The location you extracted, e.g., 'San Francisco, USA']\"\n"
+        "}\n\n"
+        # The resume_text is now correctly passed into the prompt
+        f"--- RESUME TEXT ---\n{resume_text}"
+    )
+
     try:
-        response = await model.generate_content_async(prompt)
-        cleaned_text = response.text.strip().replace("```json", "").replace("```", "")
-        return json.loads(cleaned_text)
-    except Exception as e: return {"error": f"Failed to analyze resume: {e}"}
+        # Use generate_content_async for non-blocking call in an async context like FastAPI
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=generation_config
+        )
+        # The model now returns a clean JSON string directly, no manual cleaning needed.
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Error calling Gemini API: {e}")
+        # Return a dictionary with an error key for robust error handling
+        return {"error": f"Failed to analyze resume with AI: {e}"}
 
 # --- API Endpoints ---
 @app.post("/register/", response_model=UserSchema, tags=["Authentication"])
@@ -142,17 +169,63 @@ def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: User =
     db.add(db_job); db.commit(); db.refresh(db_job)
     return db_job
 
+@app.get("/users/me/preferences/", response_model=JobSearchSchema, tags=["Users"])
+def get_user_preferences(current_user: models.User = Depends(get_current_active_user)):
+    """
+    NEW: Fetches the current logged-in user's saved search preferences.
+    The frontend will call this when the search page loads.
+    """
+    # current_user.preferences is available because of the relationship we added in models.py
+    if not current_user.preferences:
+        # If the user has never searched before, return empty default values
+        return JobSearchSchema()
+    return current_user.preferences
+
+
+# --- Replace your existing search_jobs function with this updated version ---
 @app.post("/jobs/search/", response_model=List[JobSchema], tags=["Jobs"])
-def search_jobs(search: JobSearchSchema, db: Session = Depends(get_db)):
-    """Searches for jobs based on skills, location, and seniority level."""
-    query = db.query(Job)
+def search_jobs(
+    search: JobSearchSchema, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    UPDATED: First, it saves the user's complete preference list.
+    Then, it searches for jobs using only the main 3 criteria.
+    """
+    
+    # --- Step 1: Save/Update User Preferences ---
+    preference = db.query(models.UserPreference).filter(models.UserPreference.user_id == current_user.id).first()
+    
+    if preference:
+        # If preferences already exist for this user, update them
+        preference.skills = search.skills
+        preference.location = search.location
+        preference.seniority_level = search.seniority_level
+        preference.salary = search.salary
+        preference.mode = search.mode
+    else:
+        # If no preferences exist, create a new record
+        preference = models.UserPreference(**search.model_dump(), user_id=current_user.id)
+        db.add(preference)
+        
+    db.commit() # Save the changes to the database
+
+    # --- Step 2: Perform the Search with Main 3 Criteria ONLY ---
+    query = db.query(models.Job)
+
+    # We use the same 'search' object, but only for the important filters
     if search.location:
-        query = query.filter(Job.location.ilike(f"%{search.location}%"))
+        query = query.filter(models.Job.location.ilike(f"%{search.location}%"))
+        
     if search.seniority_level:
-        query = query.filter(Job.seniority_level.ilike(f"%{search.seniority_level}%"))
+        query = query.filter(models.Job.seniority_level.ilike(f"%{search.seniority_level}%"))
+        
     if search.skills:
-        # This creates a search condition for each skill in the title or description
-        skill_filters = [or_(Job.title.ilike(f"%{skill}%"), Job.description.ilike(f"%{skill}%")) for skill in search.skills]
+        skill_filters = [or_(
+            models.Job.title.ilike(f"%{skill}%"), 
+            models.Job.description.ilike(f"%{skill}%")
+        ) for skill in search.skills]
         query = query.filter(or_(*skill_filters))
     
     return query.all()
