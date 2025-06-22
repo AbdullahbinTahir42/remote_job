@@ -1,50 +1,58 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey
+# app/model.py
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
-from sqlalchemy.orm import relationship
-
-
 Base = declarative_base()
 
 class Job(Base):
+    """
+    Model for storing job openings at your company.
+    """
     __tablename__ = "jobs"
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True)
-    company = Column(String, index=True)
-    location = Column(String)
-    description = Column(Text)
-    apply_link = Column(String)
-    mode = Column(String) # 'Full-time', 'Part-time', etc.
-    salary = Column(String, nullable=True)
-    seniority_level = Column(String) # 'Entry-Level', 'Senior', etc.
+    title = Column(String, index=True, nullable=False)
+    mode = Column(String, nullable=False)
+    location = Column(String, default="Remote")
+    description = Column(Text, nullable=True)
+    is_active = Column(Integer, default=1) # 1 for active, 0 for inactive
 
 class User(Base):
+    """
+    Model for ALL users of the system.
+    This includes candidates, HR staff, and admins.
+    The 'role' field distinguishes their permissions and type.
+    """
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    is_active = Column(Boolean, default=True)
-    is_admin = Column(Boolean, default=False)
-    
-    # This line creates the link to the new UserPreference table
-    preferences = relationship("UserPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    email = Column(String, unique=True, index=True, nullable=False)
+    full_name = Column(String, nullable=False)
+    # Password is required for all users to log in (candidates included)
+    hashed_password = Column(String, nullable=False)
+    # Role distinguishes user type: 'candidate', 'hr', 'admin'
+    role = Column(String, nullable=False) 
 
-
-# --- Add this new model to the same file ---
-class UserPreference(Base):
-    """This new table will store the last search preferences for a user."""
-    __tablename__ = "user_preferences"
+    # --- Fields for candidates ---
+    phone_number = Column(String, nullable=True)
     
+
+class Application(Base):
+    """
+    Model to link a User (acting as a candidate) to a Job.
+    """
+    __tablename__ = "applications"
     id = Column(Integer, primary_key=True, index=True)
-    # This creates a one-to-one link with the users table
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    # This now links to the User table
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-    # These columns will store all the preferences from the frontend
-    skills = Column(SQLiteJSON, default=[])
-    location = Column(String, nullable=True)
-    seniority_level = Column(String, nullable=True)
-    salary = Column(String, nullable=True)
-    mode = Column(String, nullable=True) # e.g., 'Full-time'
+    # Store answers from the form
+    salary_expectation = Column(String, nullable=True)
+    skills = Column(Text, nullable=False)
+    resume_filename = Column(String, nullable=True)  
     
-    user = relationship("User", back_populates="preferences")
-
+    # Tracking fields
+    application_date = Column(DateTime(timezone=True), server_default=func.now())
+    status = Column(String, default="Pending Payment", nullable=False) # "Pending Payment", "Completed"
+    
+    # Field to link to the Stripe transaction
+    payment_intent_id = Column(String, unique=True, nullable=True)

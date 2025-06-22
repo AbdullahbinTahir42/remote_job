@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
-from sqlalchemy import create_engine,or_
+from sqlalchemy import or_
 
 # --- File parsing libraries ---
 import pdfplumber
@@ -24,11 +24,13 @@ from striprtf.striprtf import rtf_to_text
 import google.generativeai as genai
 
 # --- Project-specific imports ---
-# These import from your other project files: 
-# auth.py, database.py, models.py, schemas.py
+# These import from your other project files
 import models
-from models import User, Job
-from schemas import UserCreate, UserSchema, Token, JobCreate, JobSchema, JobSearchSchema
+from models import User, Job, Application # Added Application model
+# CORRECTED: Imports now match the schemas file you provided
+from schemas import UserCreate, User, JobCreate, Job, ApplicationCreate, Application, Token
+# Assuming 'auth.py' and 'database.py' exist and are correctly configured
+# You will need to create an 'auth.py' file with these functions
 from auth import get_password_hash, verify_password, create_access_token, oauth2_scheme, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from database import SessionLocal, engine
 
@@ -38,72 +40,97 @@ load_dotenv()
 # Create all database tables based on your models
 models.Base.metadata.create_all(bind=engine)
 
-# Configure the Gemini AI client
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost", "http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-try: genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-except Exception as e: print(f"Error configuring Gemini API: {e}")
+
+# --- CORS Middleware ---
+# This allows your frontend (e.g., running on localhost:3000) to communicate with your backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Configure Google Gemini AI ---
+try:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+except Exception as e:
+    print(f"Warning: Could not configure Gemini API. Resume analysis will not work. Error: {e}")
+
 
 # --- Dependencies ---
 def get_db():
+    """Dependency to get a database session for each request."""
     db = SessionLocal()
-    try: yield db
-    finally: db.close()
+    try:
+        yield db
+    finally:
+        db.close()
 
 def get_user(db: Session, email: str):
-    return db.query(User).filter(User.email == email).first()
+    """Utility function to fetch a user by email."""
+    return db.query(models.User).filter(models.User.email == email).first()
 
 async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
+    """Dependency to get the current logged-in user from a JWT token."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        if email is None: raise credentials_exception
+        if email is None:
+            raise credentials_exception
     except JWTError:
         raise credentials_exception
     user = get_user(db, email=email)
-    if user is None or not user.is_active: raise credentials_exception
+    if user is None:
+        raise credentials_exception
     return user
 
-async def get_current_admin_user(current_user: User = Depends(get_current_active_user)):
-    """New dependency to ensure the user is an admin."""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough privileges")
+async def get_current_admin_user(current_user: models.User = Depends(get_current_active_user)):
+    """Dependency to ensure the current user is an admin."""
+    # This now checks the 'role' field as defined in your model
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough privileges, admin access required.")
     return current_user
+
 
 # --- Helper Functions (Text Extraction & AI Analysis) ---
 def extract_text_from_file(file: UploadFile) -> str:
+    """Extracts plain text content from various file types."""
     filename = file.filename
     content = file.file.read()
     text = ""
     try:
-        if filename.endswith(".pdf"): text = "".join([(p.extract_text() or "") + "\n" for p in pdfplumber.open(io.BytesIO(content)).pages])
-        elif filename.endswith(".docx"): text = "\n".join([p.text for p in docx.Document(io.BytesIO(content)).paragraphs])
-        elif filename.endswith(".html"): text = BeautifulSoup(content, "html.parser").get_text(separator="\n")
-        elif filename.endswith(".rtf"): text = rtf_to_text(content.decode('utf-8', errors='ignore'))
-        elif filename.endswith(".txt"): text = content.decode('utf-8', errors='ignore')
-        else: raise HTTPException(status_code=400, detail=f"Unsupported file type: {filename}")
+        if filename.endswith(".pdf"):
+            text = "".join([(p.extract_text() or "") + "\n" for p in pdfplumber.open(io.BytesIO(content)).pages])
+        elif filename.endswith(".docx"):
+            text = "\n".join([p.text for p in docx.Document(io.BytesIO(content)).paragraphs])
+        elif filename.endswith(".html"):
+            text = BeautifulSoup(content, "html.parser").get_text(separator="\n")
+        elif filename.endswith(".rtf"):
+            text = rtf_to_text(content.decode('utf-8', errors='ignore'))
+        elif filename.endswith(".txt"):
+            text = content.decode('utf-8', errors='ignore')
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {filename}")
         return text
-    except Exception as e: raise HTTPException(status_code=500, detail=f"Could not process file {filename}: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not process file {filename}: {e}")
 
 async def analyze_resume_with_gemini(resume_text: str) -> dict:
-    """
-    Uses Google Gemini to extract structured JSON information from resume text.
-    This is the corrected and integrated version of your function.
-    """
+    """Uses Google Gemini to extract structured JSON from resume text."""
     if not resume_text:
         return {}
+    if not os.getenv("GEMINI_API_KEY"):
+        return {"error": "Gemini API key not configured on server."}
 
-    # Initialize the Gemini model
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
-    # Define the generation configuration to enforce JSON output
-    # This is the most reliable way to get a clean JSON response.
-    generation_config = genai.types.GenerationConfig(
-        response_mime_type="application/json"
-    )
-
-    # The prompt now correctly includes the resume_text variable
+    generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
     prompt = (
         "Analyze the following resume text. Your task is to extract two specific pieces of information "
         "and return them as a single, valid JSON object. Do not include any text, notes, or formatting "
@@ -117,115 +144,98 @@ async def analyze_resume_with_gemini(resume_text: str) -> dict:
         "  \"detectedRole\": \"[The role you identified]\",\n"
         "  \"detectedLocation\": \"[The location you extracted, e.g., 'San Francisco, USA']\"\n"
         "}\n\n"
-        # The resume_text is now correctly passed into the prompt
         f"--- RESUME TEXT ---\n{resume_text}"
     )
-
     try:
-        # Use generate_content_async for non-blocking call in an async context like FastAPI
-        response = await model.generate_content_async(
-            prompt,
-            generation_config=generation_config
-        )
-        # The model now returns a clean JSON string directly, no manual cleaning needed.
+        response = await model.generate_content_async(prompt, generation_config=generation_config)
         return json.loads(response.text)
     except Exception as e:
         print(f"Error calling Gemini API: {e}")
-        # Return a dictionary with an error key for robust error handling
         return {"error": f"Failed to analyze resume with AI: {e}"}
 
+
 # --- API Endpoints ---
-@app.post("/register/", response_model=UserSchema, tags=["Authentication"])
+@app.post("/register/", response_model=User, tags=["Authentication"]) # CORRECTED
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    if get_user(db, email=user.email): raise HTTPException(status_code=400, detail="Email already registered")
-    db_user = User(email=user.email, hashed_password=get_password_hash(user.password))
-    db.add(db_user); db.commit(); db.refresh(db_user)
+    """Registers a new user, hashes their password, and sets default roles."""
+    if get_user(db, email=user.email):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    db_user = models.User(
+        email=user.email,
+        full_name=user.full_name,
+        hashed_password=get_password_hash(user.password),
+        role='candidate' # All new users are candidates by default
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
     return db_user
 
 @app.post("/token", response_model=Token, tags=["Authentication"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """Handles user login and returns a JWT access token."""
     user = get_user(db, email=form_data.username)
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
-    token = create_access_token(data={"sub": user.email}, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    return {"access_token": token, "token_type": "bearer"}
+    
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/users/me/", response_model=UserSchema, tags=["Users"])
-async def read_current_user(current_user: User = Depends(get_current_active_user)):
+@app.get("/users/me/", response_model=User, tags=["Users"]) # CORRECTED
+async def read_current_user(current_user: models.User = Depends(get_current_active_user)):
+    """Returns the details of the currently authenticated user."""
     return current_user
 
-@app.post("/resume/analyze/", tags=["Resume"])
-async def analyze_resume(resume: UploadFile = File(...), current_user: User = Depends(get_current_active_user)):
+@app.post("/resume/analyze/", tags=["Resume Analysis"])
+async def analyze_resume(resume: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
+    """Analyzes an uploaded resume file to extract structured data."""
     resume_text = extract_text_from_file(resume)
-    if not resume_text: raise HTTPException(status_code=400, detail="Could not extract text from file.")
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Could not extract text from file.")
+    
     analysis = await analyze_resume_with_gemini(resume_text)
-    if "error" in analysis: raise HTTPException(status_code=500, detail=analysis["error"])
+    if "error" in analysis:
+        raise HTTPException(status_code=500, detail=analysis["error"])
+    
     return JSONResponse(content={"message": "Resume analyzed successfully.", "analysis": analysis})
 
-@app.post("/jobs/", response_model=JobSchema, tags=["Jobs (Admin)"])
-def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: User = Depends(get_current_admin_user)):
+@app.post("/jobs/", response_model=Job, tags=["Jobs (Admin)"]) # CORRECTED
+def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: models.User = Depends(get_current_admin_user)):
     """Creates a new job posting. Requires admin privileges."""
-    db_job = Job(**job.model_dump())
-    db.add(db_job); db.commit(); db.refresh(db_job)
+    db_job = models.Job(**job.model_dump())
+    db.add(db_job)
+    db.commit()
+    db.refresh(db_job)
     return db_job
 
-@app.get("/users/me/preferences/", response_model=JobSearchSchema, tags=["Users"])
-def get_user_preferences(current_user: models.User = Depends(get_current_active_user)):
+@app.post("/applications/", response_model=Application, tags=["Applications"])
+def submit_application(application_data: ApplicationCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     """
-    NEW: Fetches the current logged-in user's saved search preferences.
-    The frontend will call this when the search page loads.
+    Receives a user's job application data via JSON, finds the job by title, and saves the application to the database.
+    The job is linked to the application by matching the job title from the JSON payload.
     """
-    # current_user.preferences is available because of the relationship we added in models.py
-    if not current_user.preferences:
-        # If the user has never searched before, return empty default values
-        return JobSearchSchema()
-    return current_user.preferences
+    # Find the job by title (case-insensitive match)
+    job = db.query(models.Job).filter(models.Job.title.ilike(application_data.job_title)).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Job with title '{application_data.job_title}' not found.")
 
+    # Validate required fields
+    if not application_data.skills:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The 'skills' field is required.")
 
-# --- Replace your existing search_jobs function with this updated version ---
-@app.post("/jobs/search/", response_model=List[JobSchema], tags=["Jobs"])
-def search_jobs(
-    search: JobSearchSchema, 
-    db: Session = Depends(get_db), 
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """
-    UPDATED: First, it saves the user's complete preference list.
-    Then, it searches for jobs using only the main 3 criteria.
-    """
-    
-    # --- Step 1: Save/Update User Preferences ---
-    preference = db.query(models.UserPreference).filter(models.UserPreference.user_id == current_user.id).first()
-    
-    if preference:
-        # If preferences already exist for this user, update them
-        preference.skills = search.skills
-        preference.location = search.location
-        preference.seniority_level = search.seniority_level
-        preference.salary = search.salary
-        preference.mode = search.mode
-    else:
-        # If no preferences exist, create a new record
-        preference = models.UserPreference(**search.model_dump(), user_id=current_user.id)
-        db.add(preference)
-        
-    db.commit() # Save the changes to the database
+    # Create a new Application instance
+    db_application = models.Application(
+        job_id=job.id,
+        user_id=current_user.id,
+        salary_expectation=application_data.salary_expectation,
+        skills=application_data.skills
+        # status defaults to 'Pending Payment'
+    )
 
-    # --- Step 2: Perform the Search with Main 3 Criteria ONLY ---
-    query = db.query(models.Job)
-
-    # We use the same 'search' object, but only for the important filters
-    if search.location:
-        query = query.filter(models.Job.location.ilike(f"%{search.location}%"))
-        
-    if search.seniority_level:
-        query = query.filter(models.Job.seniority_level.ilike(f"%{search.seniority_level}%"))
-        
-    if search.skills:
-        skill_filters = [or_(
-            models.Job.title.ilike(f"%{skill}%"), 
-            models.Job.description.ilike(f"%{skill}%")
-        ) for skill in search.skills]
-        query = query.filter(or_(*skill_filters))
-    
-    return query.all()
+    db.add(db_application)
+    db.commit()
+    db.refresh(db_application)
+    return db_application
