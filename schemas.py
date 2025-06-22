@@ -1,4 +1,3 @@
-# app/schemas.py
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
@@ -8,34 +7,35 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+
 class TokenData(BaseModel):
     email: Optional[str] = None
 
 
 # --- User Schemas ---
 class UserBase(BaseModel):
-    """Base schema for user data."""
+    """Shared fields used in user-related schemas."""
     email: EmailStr
     full_name: str
     phone_number: Optional[str] = None
 
+
 class UserCreate(UserBase):
-    """Schema for creating a new user (registration)."""
+    """Schema for user registration."""
     password: str
+
 
 class UserLogin(BaseModel):
     """Schema for user login."""
     email: EmailStr
     password: str
 
+
 class User(UserBase):
-    """
-    Schema for returning user data to the client.
-    Crucially, it does NOT include the password.
-    """
+    """Schema for returning user data (excluding password)."""
     id: int
     role: str
-    resume_filename: Optional[str] = None
+    resume_filename: Optional[str] = None  # Can be removed if not used anymore
 
     class Config:
         from_attributes = True
@@ -43,18 +43,20 @@ class User(UserBase):
 
 # --- Job Schemas ---
 class JobBase(BaseModel):
-    """Base schema for job data."""
+    """Shared fields used in job-related schemas."""
     title: str
     mode: str
     location: str
     description: Optional[str] = None
 
+
 class JobCreate(JobBase):
-    """Schema for creating a new job posting (admin)."""
+    """Schema for creating a new job posting."""
     pass
 
+
 class Job(JobBase):
-    """Schema for returning job data to the client."""
+    """Schema for returning job data."""
     id: int
     is_active: int
 
@@ -62,32 +64,24 @@ class Job(JobBase):
         from_attributes = True
 
 
+# --- Application Schemas ---
 class ApplicationCreate(BaseModel):
-    """
-    UPDATED: This is the schema for the JSON data your frontend will send
-    when a user submits their job application preferences.
-    """
-    job_title: str  # User provides the title of the job they want
-    location: str
-    skills: str     # This field is required as per your database model
+    """Schema for creating a new job application."""
+    job_title: str
     salary_expectation: Optional[str] = None
-    seniority_level: Optional[str] = None  # e.g., "Entry-level", "Mid-level", "Senior"
-    job_type: Optional[str] = None         # e.g., "Full-time", "Part-time", "Contract"
-    benefits: Optional[List[str]] = []     # A list of desired benefits
+    skills: str
 
-class Application(ApplicationCreate):
-    """
-    UPDATED: This schema represents the final application record that is
-    returned by the API after it has been saved to the database.
-    It now includes all fields from the creation process plus system-generated fields.
-    """
+
+class Application(BaseModel):
+    """Schema for returning job application details."""
     id: int
     job_id: int
     user_id: int
+    salary_expectation: Optional[str]
+    skills: str
     application_date: datetime
     status: str
-    # ADDED: This field will hold the filename of the resume
-    resume_filename: Optional[str] = None 
+    payment_intent_id: Optional[str]
 
     class Config:
-        from_attributes = True
+        orm_mode = True

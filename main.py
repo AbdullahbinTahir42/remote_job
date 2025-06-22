@@ -5,14 +5,15 @@ from datetime import timedelta
 from typing import List
 
 # --- Third-party libraries ---
+import shutil
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form,UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 # --- File parsing libraries ---
 import pdfplumber
@@ -211,31 +212,32 @@ def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: models
     db.refresh(db_job)
     return db_job
 
-@app.post("/applications/", response_model=Application, tags=["Applications"])
-def submit_application(application_data: ApplicationCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    """
-    Receives a user's job application data via JSON, finds the job by title, and saves the application to the database.
-    The job is linked to the application by matching the job title from the JSON payload.
-    """
-    # Find the job by title (case-insensitive match)
-    job = db.query(models.Job).filter(models.Job.title.ilike(application_data.job_title)).first()
+@app.post("/applications/", response_model=Application)
+def submit_application(
+    application_data: ApplicationCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    # Clean job title for case-insensitive match
+    job_title_cleaned = application_data.job_title.strip().lower()
+
+    job = db.query(models.Job).filter(func.lower(models.Job.title) == job_title_cleaned).first()
     if not job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Job with title '{application_data.job_title}' not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job with title '{application_data.job_title}' not found."
+        )
 
-    # Validate required fields
-    if not application_data.skills:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The 'skills' field is required.")
-
-    # Create a new Application instance
+    # Create and store application
     db_application = models.Application(
         job_id=job.id,
         user_id=current_user.id,
         salary_expectation=application_data.salary_expectation,
         skills=application_data.skills
-        # status defaults to 'Pending Payment'
     )
 
     db.add(db_application)
     db.commit()
     db.refresh(db_application)
+
     return db_application
