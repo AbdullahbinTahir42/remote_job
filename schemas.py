@@ -73,15 +73,16 @@ class ApplicationCreate(BaseModel):
 
 
 class Application(BaseModel):
-    """Schema for returning job application details."""
     id: int
     job_id: int
     user_id: int
     salary_expectation: Optional[str]
     skills: str
+    resume_filename: Optional[str]  
     application_date: datetime
     status: str
     payment_intent_id: Optional[str]
 
     class Config:
         orm_mode = True
+

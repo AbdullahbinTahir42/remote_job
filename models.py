@@ -29,8 +29,12 @@ class User(Base):
 
     phone_number = Column(String, nullable=True)
 
-    # ✅ Add this:
+    # ✅ New: Store resume filename
+    resume_filename = Column(String, nullable=True)
+
+    # ✅ Applications relationship
     applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")
+
 
 class Application(Base):
     __tablename__ = "applications"

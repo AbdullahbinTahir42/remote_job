@@ -3,6 +3,8 @@ import json
 import io
 from datetime import timedelta
 from typing import List
+import uuid
+
 
 # --- Third-party libraries ---
 import shutil
@@ -42,6 +44,9 @@ load_dotenv()
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+RESUME_UPLOAD_DIR = "resumes" # Directory to store uploaded resumes
+
 
 # --- CORS Middleware ---
 # This allows your frontend (e.g., running on localhost:3000) to communicate with your backend
@@ -190,18 +195,51 @@ async def read_current_user(current_user: models.User = Depends(get_current_acti
     """Returns the details of the currently authenticated user."""
     return current_user
 
+
 @app.post("/resume/analyze/", tags=["Resume Analysis"])
-async def analyze_resume(resume: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
-    """Analyzes an uploaded resume file to extract structured data."""
-    resume_text = extract_text_from_file(resume)
-    if not resume_text:
-        raise HTTPException(status_code=400, detail="Could not extract text from file.")
-    
-    analysis = await analyze_resume_with_gemini(resume_text)
-    if "error" in analysis:
-        raise HTTPException(status_code=500, detail=analysis["error"])
-    
-    return JSONResponse(content={"message": "Resume analyzed successfully.", "analysis": analysis})
+async def analyze_resume(
+    resume: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    try:
+        # --- Validate file type ---
+        ext = os.path.splitext(resume.filename)[1].lower()
+        if ext not in [".pdf", ".doc", ".docx"]:
+            raise HTTPException(status_code=400, detail="Unsupported file type.")
+
+        # --- Save the resume ---
+        os.makedirs("resumes", exist_ok=True)
+        filename = f"{uuid.uuid4().hex}_{resume.filename}"
+        file_path = os.path.join("resumes", filename)
+
+        with open(file_path, "wb") as buffer:
+            buffer.write(await resume.read())
+
+        # --- Extract text ---
+        resume_text = extract_text_from_file(file_path)
+        if not resume_text:
+            raise HTTPException(status_code=400, detail="Could not extract text from file.")
+
+        # --- AI Analysis ---
+        analysis = await analyze_resume_with_gemini(resume_text)
+        if "error" in analysis:
+            raise HTTPException(status_code=500, detail=analysis["error"])
+
+        # --- Save filename in DB ---
+        current_user.resume_filename = filename
+        db.commit()
+
+        return {
+            "message": "Resume analyzed and stored successfully.",
+            "resume_filename": filename,
+            "analysis": analysis
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @app.post("/jobs/", response_model=Job, tags=["Jobs (Admin)"]) # CORRECTED
 def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: models.User = Depends(get_current_admin_user)):
