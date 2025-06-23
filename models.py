@@ -43,6 +43,7 @@ class Application(Base):
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
+    resume_filename = Column(String, nullable=True)  # Store the filename of the resume
     salary_expectation = Column(String, nullable=True)
     skills = Column(Text, nullable=False)
     application_date = Column(DateTime(timezone=True), server_default=func.now())

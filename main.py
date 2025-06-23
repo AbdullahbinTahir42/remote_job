@@ -259,13 +259,14 @@ def submit_application(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Job with title '{application_data.job_title}' not found."
         )
-
+    resume_filename = current_user.resume_filename if current_user.resume_filename else None
     # Create and store application
     db_application = models.Application(
         job_id=job.id,
         user_id=current_user.id,
         salary_expectation=application_data.salary_expectation,
-        skills=application_data.skills
+        skills=application_data.skills,
+        resume_filename=resume_filename,  # Store the resume filename
     )
 
     db.add(db_application)
