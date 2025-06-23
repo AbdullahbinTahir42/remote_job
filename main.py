@@ -3,7 +3,8 @@ import json
 import io
 from datetime import timedelta
 from typing import List
-import uuid
+
+
 
 
 # --- Third-party libraries ---
@@ -106,28 +107,27 @@ async def get_current_admin_user(current_user: models.User = Depends(get_current
 
 
 # --- Helper Functions (Text Extraction & AI Analysis) ---
-def extract_text_from_file(file: UploadFile) -> str:
-    """Extracts plain text content from various file types."""
-    filename = file.filename
-    content = file.file.read()
-    text = ""
+async def extract_text_from_bytes(content: bytes, filename: str) -> str:
     try:
-        if filename.endswith(".pdf"):
-            text = "".join([(p.extract_text() or "") + "\n" for p in pdfplumber.open(io.BytesIO(content)).pages])
-        elif filename.endswith(".docx"):
-            text = "\n".join([p.text for p in docx.Document(io.BytesIO(content)).paragraphs])
-        elif filename.endswith(".html"):
+        ext = os.path.splitext(filename)[1].lower()
+        if ext == ".pdf":
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                text = "".join([(p.extract_text() or "") + "\n" for p in pdf.pages])
+        elif ext == ".docx":
+            doc = docx.Document(io.BytesIO(content))
+            text = "\n".join([p.text for p in doc.paragraphs])
+        elif ext == ".html":
             text = BeautifulSoup(content, "html.parser").get_text(separator="\n")
-        elif filename.endswith(".rtf"):
+        elif ext == ".rtf":
             text = rtf_to_text(content.decode('utf-8', errors='ignore'))
-        elif filename.endswith(".txt"):
+        elif ext == ".txt":
             text = content.decode('utf-8', errors='ignore')
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {filename}")
         return text
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not process file {filename}: {e}")
-
+   
 async def analyze_resume_with_gemini(resume_text: str) -> dict:
     """Uses Google Gemini to extract structured JSON from resume text."""
     if not resume_text:
@@ -195,7 +195,6 @@ async def read_current_user(current_user: models.User = Depends(get_current_acti
     """Returns the details of the currently authenticated user."""
     return current_user
 
-
 @app.post("/resume/analyze/", tags=["Resume Analysis"])
 async def analyze_resume(
     resume: UploadFile = File(...),
@@ -203,30 +202,27 @@ async def analyze_resume(
     current_user: models.User = Depends(get_current_active_user)
 ):
     try:
-        # --- Validate file type ---
         ext = os.path.splitext(resume.filename)[1].lower()
-        if ext not in [".pdf", ".doc", ".docx"]:
+        if ext not in [".pdf", ".doc", ".docx", ".html", ".rtf", ".txt"]:
             raise HTTPException(status_code=400, detail="Unsupported file type.")
 
-        # --- Save the resume ---
         os.makedirs("resumes", exist_ok=True)
-        filename = f"{uuid.uuid4().hex}_{resume.filename}"
+        filename = f"{current_user.full_name}_{current_user.id}{ext}"
         file_path = os.path.join("resumes", filename)
 
-        with open(file_path, "wb") as buffer:
-            buffer.write(await resume.read())
+        content = await resume.read()
 
-        # --- Extract text ---
-        resume_text = extract_text_from_file(file_path)
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+
+        resume_text = await extract_text_from_bytes(content, resume.filename)
         if not resume_text:
             raise HTTPException(status_code=400, detail="Could not extract text from file.")
 
-        # --- AI Analysis ---
         analysis = await analyze_resume_with_gemini(resume_text)
         if "error" in analysis:
             raise HTTPException(status_code=500, detail=analysis["error"])
 
-        # --- Save filename in DB ---
         current_user.resume_filename = filename
         db.commit()
 
@@ -235,10 +231,8 @@ async def analyze_resume(
             "resume_filename": filename,
             "analysis": analysis
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @app.post("/jobs/", response_model=Job, tags=["Jobs (Admin)"]) # CORRECTED
