@@ -66,23 +66,33 @@ class Job(JobBase):
 
 # --- Application Schemas ---
 class ApplicationCreate(BaseModel):
-    """Schema for creating a new job application."""
     job_title: str
     salary_expectation: Optional[str] = None
-    skills: str
-
+    skills: List[str]  # Changed to list to match multiple skills selected
+    categories: Optional[List[str]] = None  # For job categories (e.g., full-time, part-time)
+    location: Optional[str] = None
+    benefits: Optional[List[str]] = None
+    career_level: Optional[str] = None
+    work_type: Optional[str] = None  # e.g., full-time, freelance
+    # Add any other fields you collect in your frontend form here
 
 class Application(BaseModel):
     id: int
     job_id: int
     user_id: int
     salary_expectation: Optional[str]
-    skills: str
-    resume_filename: Optional[str]  
+    skills: List[str]
+    categories: Optional[List[str]] = None
+    location: Optional[str] = None
+    benefits: Optional[List[str]] = None
+    career_level: Optional[str] = None
+    work_type: Optional[str] = None
+    resume_filename: Optional[str]
     application_date: datetime
     status: str
     payment_intent_id: Optional[str]
 
     class Config:
         from_attributes = True
+    
 

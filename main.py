@@ -8,7 +8,6 @@ from typing import List
 
 
 # --- Third-party libraries ---
-import shutil
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form,UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,7 +52,7 @@ RESUME_UPLOAD_DIR = "resumes" # Directory to store uploaded resumes
 # This allows your frontend (e.g., running on localhost:3000) to communicate with your backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://localhost:3000"],
+    allow_origins=["http://localhost:5173"],  # 👈 Match your frontend exactly
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,6 +65,7 @@ except Exception as e:
     print(f"Warning: Could not configure Gemini API. Resume analysis will not work. Error: {e}")
 
 
+    
 # --- Dependencies ---
 def get_db():
     """Dependency to get a database session for each request."""
@@ -244,29 +244,38 @@ def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: models
     db.refresh(db_job)
     return db_job
 
+
+
 @app.post("/applications/", response_model=Application)
 def submit_application(
     application_data: ApplicationCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user)
 ):
-    # Clean job title for case-insensitive match
+    # Normalize job title for case-insensitive match
     job_title_cleaned = application_data.job_title.strip().lower()
 
-    job = db.query(models.Job).filter(func.lower(models.Job.title) == job_title_cleaned).first()
+    job = db.query(Job).filter(func.lower(Job.title) == job_title_cleaned).first()
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Job with title '{application_data.job_title}' not found."
         )
+
     resume_filename = current_user.resume_filename if current_user.resume_filename else None
-    # Create and store application
-    db_application = models.Application(
+
+    # Create application entry
+    db_application = Application(
         job_id=job.id,
         user_id=current_user.id,
         salary_expectation=application_data.salary_expectation,
-        skills=application_data.skills,
-        resume_filename=resume_filename,  # Store the resume filename
+        skills=",".join(application_data.skills),
+        categories=",".join(application_data.categories),
+        location=application_data.location,
+        benefits=",".join(application_data.benefits),
+        career_level=application_data.career_level,
+        work_type=application_data.work_type,
+        resume_filename=resume_filename,
     )
 
     db.add(db_application)
@@ -274,3 +283,10 @@ def submit_application(
     db.refresh(db_application)
 
     return db_application
+
+
+
+@app.get("/job-titles/", response_model=List[str])
+def get_job_titles(db: Session = Depends(get_db)):
+    jobs = db.query(models.Job).distinct(models.Job.title).all()
+    return [job.title for job in jobs]

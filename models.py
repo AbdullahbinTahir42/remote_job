@@ -43,9 +43,15 @@ class Application(Base):
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    resume_filename = Column(String, nullable=True)  # Store the filename of the resume
+    resume_filename = Column(String, nullable=True)
     salary_expectation = Column(String, nullable=True)
-    skills = Column(Text, nullable=False)
+    skills = Column(Text, nullable=False)  # store as comma-separated string
+    categories = Column(Text, nullable=True)  # same format
+    location = Column(String, nullable=True)
+    benefits = Column(Text, nullable=True)  # same format
+    career_level = Column(String, nullable=True)
+    work_type = Column(String, nullable=True)
+
     application_date = Column(DateTime(timezone=True), server_default=func.now())
     status = Column(String, default="Pending Payment", nullable=False)
     payment_intent_id = Column(String, unique=True, nullable=True)
