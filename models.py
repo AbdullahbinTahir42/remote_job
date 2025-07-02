@@ -15,8 +15,8 @@ class Job(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Integer, default=1)
 
-    # ✅ Add this:
     applications = relationship("Application", back_populates="job", cascade="all, delete-orphan")
+
 
 class User(Base):
     __tablename__ = "users"
@@ -26,35 +26,43 @@ class User(Base):
     full_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, nullable=False)
-
     phone_number = Column(String, nullable=True)
-
-    # ✅ New: Store resume filename
     resume_filename = Column(String, nullable=True)
+    profile_status = Column(String, default="No", nullable=False)  # ✅ New column
 
-    # ✅ Applications relationship
+
+    profile = relationship("Profile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")
+
+
+class Profile(Base):
+    __tablename__ = "profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    job_title = Column(String, nullable=False)
+    resume_filename = Column(String, nullable=True)
+    salary_expectation = Column(String, nullable=True)
+    skills = Column(Text, nullable=True)  # comma-separated
+    remote_type = Column(Text, nullable=True)
+    location = Column(String, nullable=True)
+    benefits = Column(Text, nullable=True)
+    career_level = Column(String, nullable=True)
+    work_type = Column(String, nullable=True)
+
+    application_date = Column(DateTime(timezone=True), server_default=func.now())
+    payment_status = Column(String, default="Pending", nullable=False)
+
+    user = relationship("User", back_populates="profile")
 
 
 class Application(Base):
     __tablename__ = "applications"
 
     id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
 
-    resume_filename = Column(String, nullable=True)
-    salary_expectation = Column(String, nullable=True)
-    skills = Column(Text, nullable=False)  # store as comma-separated string
-    categories = Column(Text, nullable=True)  # same format
-    location = Column(String, nullable=True)
-    benefits = Column(Text, nullable=True)  # same format
-    career_level = Column(String, nullable=True)
-    work_type = Column(String, nullable=True)
-
-    application_date = Column(DateTime(timezone=True), server_default=func.now())
-    status = Column(String, default="Pending Payment", nullable=False)
-    payment_intent_id = Column(String, unique=True, nullable=True)
-
-    job = relationship("Job", back_populates="applications")
     user = relationship("User", back_populates="applications")
+    job = relationship("Job", back_populates="applications")

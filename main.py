@@ -1,11 +1,8 @@
 import os
 import json
 import io
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import List
-
-
-
 
 # --- Third-party libraries ---
 from dotenv import load_dotenv
@@ -27,11 +24,9 @@ from striprtf.striprtf import rtf_to_text
 import google.generativeai as genai
 
 # --- Project-specific imports ---
-# These import from your other project files
+# Imports for models and schemas are consolidated
 import models
-from models import User, Job, Application # Added Application model
-# CORRECTED: Imports now match the schemas file you provided
-from schemas import UserCreate, User, JobCreate, Job, ApplicationCreate, Application, Token
+import schemas
 # Assuming 'auth.py' and 'database.py' exist and are correctly configured
 # You will need to create an 'auth.py' file with these functions
 from auth import get_password_hash, verify_password, create_access_token, oauth2_scheme, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
@@ -127,9 +122,8 @@ async def extract_text_from_bytes(content: bytes, filename: str) -> str:
         return text
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not process file {filename}: {e}")
-   
+    
 async def analyze_resume_with_gemini(resume_text: str) -> dict:
-    """Uses Google Gemini to extract structured JSON from resume text."""
     if not resume_text:
         return {}
     if not os.getenv("GEMINI_API_KEY"):
@@ -137,6 +131,7 @@ async def analyze_resume_with_gemini(resume_text: str) -> dict:
 
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
+
     prompt = (
         "Analyze the following resume text. Your task is to extract two specific pieces of information "
         "and return them as a single, valid JSON object. Do not include any text, notes, or formatting "
@@ -152,17 +147,18 @@ async def analyze_resume_with_gemini(resume_text: str) -> dict:
         "}\n\n"
         f"--- RESUME TEXT ---\n{resume_text}"
     )
+
     try:
         response = await model.generate_content_async(prompt, generation_config=generation_config)
-        return json.loads(response.text)
+        raw_output = response.candidates[0].content.parts[0].text
+        return json.loads(raw_output)
     except Exception as e:
         print(f"Error calling Gemini API: {e}")
         return {"error": f"Failed to analyze resume with AI: {e}"}
 
-
 # --- API Endpoints ---
-@app.post("/register/", response_model=User, tags=["Authentication"]) # CORRECTED
-def register_user(user: UserCreate, db: Session = Depends(get_db)):
+@app.post("/register/", response_model=schemas.S_User, tags=["Authentication"])
+def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     """Registers a new user, hashes their password, and sets default roles."""
     if get_user(db, email=user.email):
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -178,7 +174,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db.refresh(db_user)
     return db_user
 
-@app.post("/token", response_model=Token, tags=["Authentication"])
+@app.post("/token", response_model=schemas.Token, tags=["Authentication"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """Handles user login and returns a JWT access token."""
     user = get_user(db, email=form_data.username)
@@ -190,7 +186,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/users/me/", response_model=User, tags=["Users"]) # CORRECTED
+@app.get("/users/me/", response_model=schemas.S_User, tags=["Users"])
 async def read_current_user(current_user: models.User = Depends(get_current_active_user)):
     """Returns the details of the currently authenticated user."""
     return current_user
@@ -235,8 +231,8 @@ async def analyze_resume(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/jobs/", response_model=Job, tags=["Jobs (Admin)"]) # CORRECTED
-def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: models.User = Depends(get_current_admin_user)):
+@app.post("/jobs/", response_model=schemas.S_Job, tags=["Jobs (Admin)"])
+def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), admin_user: models.User = Depends(get_current_admin_user)):
     """Creates a new job posting. Requires admin privileges."""
     db_job = models.Job(**job.model_dump())
     db.add(db_job)
@@ -246,47 +242,54 @@ def create_job(job: JobCreate, db: Session = Depends(get_db), admin_user: models
 
 
 
-@app.post("/applications/", response_model=Application)
+@app.post("/profile/", response_model= schemas.NewProfile)
 def submit_application(
-    application_data: ApplicationCreate,
+    profile_data: schemas.CreateProfile,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: models.User = Depends(get_current_active_user)
 ):
-    # Normalize job title for case-insensitive match
-    job_title_cleaned = application_data.job_title.strip().lower()
-
-    job = db.query(Job).filter(func.lower(Job.title) == job_title_cleaned).first()
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Job with title '{application_data.job_title}' not found."
-        )
+    # Normalize job title for case-insensitive search
+    job_title = profile_data.job_title.strip().lower()
+    current_user.profile_status = "YES"
 
     resume_filename = current_user.resume_filename if current_user.resume_filename else None
 
-    # Create application entry
-    db_application = Application(
+    # Create and store the new application
+    # --- Previous code in your API endpoint ---
+
+# Create and store the new application
+    salary_string = None
+    if profile_data.salary_expectation:
+    # Format the salary object into a single string
+        salary_string = f"{profile_data.salary_expectation.amount} {profile_data.salary_expectation.type}"
+
+    db_profile = models.Profiles(
         job_id=job.id,
         user_id=current_user.id,
-        salary_expectation=application_data.salary_expectation,
+    
+    # Correctly assign the formatted string to the database column
+        salary_expectation=salary_string,
+        job_title= job_title,
         skills=",".join(application_data.skills),
-        categories=",".join(application_data.categories),
-        location=application_data.location,
-        benefits=",".join(application_data.benefits),
-        career_level=application_data.career_level,
-        work_type=application_data.work_type,
+        remote_type=profile_data.remote_type,
+        location=profile_data.location,
+        benefits=",".join(profile_data.benefits) if profile_data.benefits else None,
+        career_level=profile_data.career_level,
+        work_type=profile_data.work_type,
         resume_filename=resume_filename,
-    )
+    # You can remove application_date and status as they have default values in the model
+        )
 
-    db.add(db_application)
+    db.add(db_profile)
     db.commit()
-    db.refresh(db_application)
+    db.refresh(db_profile)
 
-    return db_application
+    return db_profile
 
+    
 
+# @app.get("/job-titles/", response_model=List[str])
+# def get_job_titles(db: Session = Depends(get_db)):
+#     jobs = db.query(models.Job).distinct(models.Job.title).all()
+#     return [job.title for job in jobs]
 
-@app.get("/job-titles/", response_model=List[str])
-def get_job_titles(db: Session = Depends(get_db)):
-    jobs = db.query(models.Job).distinct(models.Job.title).all()
-    return [job.title for job in jobs]

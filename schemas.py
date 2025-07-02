@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -31,7 +31,7 @@ class UserLogin(BaseModel):
     password: str
 
 
-class User(UserBase):
+class S_User(UserBase):
     """Schema for returning user data (excluding password)."""
     id: int
     role: str
@@ -55,7 +55,7 @@ class JobCreate(JobBase):
     pass
 
 
-class Job(JobBase):
+class S_Job(JobBase):
     """Schema for returning job data."""
     id: int
     is_active: int
@@ -64,35 +64,63 @@ class Job(JobBase):
         from_attributes = True
 
 
+class Salary(BaseModel):
+    amount: float
+    type: str
+
+
+
+
 # --- Application Schemas ---
-class ApplicationCreate(BaseModel):
+class NewProfile(BaseModel):
     job_title: str
-    salary_expectation: Optional[str] = None
+    salary_expectation: Optional[Salary] = None
     skills: List[str]  # Changed to list to match multiple skills selected
-    categories: Optional[List[str]] = None  # For job categories (e.g., full-time, part-time)
+    remote_type: Optional[str] = None  # For job categories (e.g., full-time, part-time)
     location: Optional[str] = None
     benefits: Optional[List[str]] = None
     career_level: Optional[str] = None
     work_type: Optional[str] = None  # e.g., full-time, freelance
     # Add any other fields you collect in your frontend form here
 
-class Application(BaseModel):
+class CreateProfile(BaseModel):
     id: int
-    job_id: int
     user_id: int
+    job_title:str
     salary_expectation: Optional[str]
     skills: List[str]
-    categories: Optional[List[str]] = None
+    remote_type: Optional[str] = None
     location: Optional[str] = None
     benefits: Optional[List[str]] = None
     career_level: Optional[str] = None
     work_type: Optional[str] = None
     resume_filename: Optional[str]
     application_date: datetime
-    status: str
-    payment_intent_id: Optional[str]
+    payment_status: str
+    
 
     class Config:
         from_attributes = True
+
+    @field_validator("skills", "benefits", mode='before')
+    @classmethod
+    def split_str(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, str):
+            # Split the string by comma, and remove any leading/trailing whitespace from each item
+            return [item.strip() for item in v.split(',')]
+        return v
     
 
+class S_Application(BaseModel):
+    id: int
+    user_id: int
+    job_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ApplicationCreate(BaseModel):
+    job_title: str  # This can be used to fetch job_id inside API logic
