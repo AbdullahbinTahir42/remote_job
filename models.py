@@ -12,6 +12,7 @@ class Job(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
     mode = Column(String, nullable=False)  # e.g., "Remote", "On-site", "Hybrid"
+    location = Column(String, default="Remote")
     type = Column(String, nullable=False)  # e.g., "Full-time", "Part-time", "Internship"
     experience = Column(String, nullable=False)  # e.g., "Entry", "Mid", "Senior"
     salary = Column(Integer, nullable=True)  # in USD or appropriate unit

@@ -244,6 +244,38 @@ def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), admin_user
     return db_job
 
 
+from sqlalchemy import or_
+
+@app.get("/user_jobs/", response_model=List[schemas.S_Job])
+def get_user_related_jobs(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    profile = current_user.profile  # assuming relationship exists
+
+    if not profile or (not profile.job_title and not profile.skills):
+        return []
+
+    job_title = profile.job_title.lower()
+    skill_list = [skill.strip().lower() for skill in profile.skills.split(",") if skill.strip()]
+
+    query = db.query(models.Job)
+
+    filters = []
+
+    # Match job title
+    if job_title:
+        filters.append(models.Job.title.ilike(f"%{job_title}%"))
+
+    # Match any skill in job description or title
+    for skill in skill_list:
+        filters.append(models.Job.description.ilike(f"%{skill}%"))
+        filters.append(models.Job.title.ilike(f"%{skill}%"))
+
+    # Combine filters with OR
+    jobs = query.filter(or_(*filters)).all()
+    return jobs
+
 
 @app.post("/profiles/", response_model= schemas.CreateProfile)
 def Create_Profile(
@@ -295,9 +327,7 @@ def Create_Profile(
 
     
 
-@app.get("/jobs/", response_model=List[schemas.S_Job])  # 👈 FIXED: return list of Job schema
-def get_job_list(db: Session = Depends(get_db)):
-    return db.query(models.Job).all()
+
 
 
 @app.get("/profile/")

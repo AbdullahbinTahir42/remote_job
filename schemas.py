@@ -119,14 +119,22 @@ class CreateProfile(BaseModel):
         return v
     
 
-class S_Application(BaseModel):
+class ApplicationBase(BaseModel):
+    job_id: int
+    cover_letter: Optional[str] = None
+
+
+# --- Create Schema (for POST requests) ---
+class ApplicationCreate(ApplicationBase):
+    pass
+
+
+# --- Read Schema (for GET responses) ---
+class S_Application(ApplicationBase):
     id: int
     user_id: int
-    job_id: int
+    application_date: datetime
+    status: str
 
     class Config:
         from_attributes = True
-
-
-class ApplicationCreate(BaseModel):
-    job_title: str  # This can be used to fetch job_id inside API logic
