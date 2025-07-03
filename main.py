@@ -36,7 +36,9 @@ from database import SessionLocal, engine
 load_dotenv()
 
 # Create all database tables based on your models
+#models.Base.metadata.drop_all(bind=engine)
 models.Base.metadata.create_all(bind=engine)
+  # Clear existing data for a fresh start
 
 app = FastAPI()
 
@@ -166,6 +168,7 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = models.User(
         email=user.email,
         full_name=user.full_name,
+        phone_number=user.phone_number,
         hashed_password=get_password_hash(user.password),
         role='candidate' # All new users are candidates by default
     )
@@ -242,17 +245,19 @@ def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), admin_user
 
 
 
-@app.post("/profile/", response_model= schemas.NewProfile)
-def submit_application(
-    profile_data: schemas.CreateProfile,
+@app.post("/profiles/", response_model= schemas.CreateProfile)
+def Create_Profile(
+    profile_data: schemas.NewProfile,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     # Normalize job title for case-insensitive search
     job_title = profile_data.job_title.strip().lower()
     current_user.profile_status = "YES"
-
-    resume_filename = current_user.resume_filename if current_user.resume_filename else None
+    existing_profile = current_user.profile
+    if existing_profile:
+        db.delete(existing_profile)
+        db.commit()
 
     # Create and store the new application
     # --- Previous code in your API endpoint ---
@@ -263,20 +268,22 @@ def submit_application(
     # Format the salary object into a single string
         salary_string = f"{profile_data.salary_expectation.amount} {profile_data.salary_expectation.type}"
 
-    db_profile = models.Profiles(
-        job_id=job.id,
+    db_profile = models.Profile(
+        
         user_id=current_user.id,
+        full_name=current_user.full_name,
+        email=current_user.email,
     
     # Correctly assign the formatted string to the database column
         salary_expectation=salary_string,
         job_title= job_title,
-        skills=",".join(application_data.skills),
+        skills=",".join(profile_data.skills),
         remote_type=profile_data.remote_type,
         location=profile_data.location,
         benefits=",".join(profile_data.benefits) if profile_data.benefits else None,
         career_level=profile_data.career_level,
         work_type=profile_data.work_type,
-        resume_filename=resume_filename,
+        resume_filename=current_user.resume_filename if current_user.resume_filename else None,
     # You can remove application_date and status as they have default values in the model
         )
 
@@ -288,8 +295,28 @@ def submit_application(
 
     
 
-# @app.get("/job-titles/", response_model=List[str])
-# def get_job_titles(db: Session = Depends(get_db)):
-#     jobs = db.query(models.Job).distinct(models.Job.title).all()
-#     return [job.title for job in jobs]
+@app.get("/jobs/", response_model=List[schemas.S_Job])  # 👈 FIXED: return list of Job schema
+def get_job_list(db: Session = Depends(get_db)):
+    return db.query(models.Job).all()
 
+
+@app.get("/profile/")
+def get_profile(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Fetches the profile of the currently authenticated user."""
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return profile
+
+
+@app.get("/me")
+def get_current_user_info(current_user: models.User = Depends(get_current_active_user)):
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "profile_status": current_user.profile_status
+    }

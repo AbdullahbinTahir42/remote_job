@@ -46,7 +46,10 @@ class JobBase(BaseModel):
     """Shared fields used in job-related schemas."""
     title: str
     mode: str
-    location: str
+    type: str  # Full-time, Part-time, etc.
+    experience: str  # Entry, Mid, Senior, etc.
+    salary: Optional[int] = None
+    company: str
     description: Optional[str] = None
 
 
@@ -59,6 +62,7 @@ class S_Job(JobBase):
     """Schema for returning job data."""
     id: int
     is_active: int
+    posted_at: datetime
 
     class Config:
         from_attributes = True
@@ -86,6 +90,8 @@ class NewProfile(BaseModel):
 class CreateProfile(BaseModel):
     id: int
     user_id: int
+    full_name:str
+    email: EmailStr
     job_title:str
     salary_expectation: Optional[str]
     skills: List[str]
@@ -95,7 +101,7 @@ class CreateProfile(BaseModel):
     career_level: Optional[str] = None
     work_type: Optional[str] = None
     resume_filename: Optional[str]
-    application_date: datetime
+    profile_date: datetime
     payment_status: str
     
 

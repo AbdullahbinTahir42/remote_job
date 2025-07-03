@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime,UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -10,9 +11,13 @@ class Job(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
-    mode = Column(String, nullable=False)
-    location = Column(String, default="Remote")
+    mode = Column(String, nullable=False)  # e.g., "Remote", "On-site", "Hybrid"
+    type = Column(String, nullable=False)  # e.g., "Full-time", "Part-time", "Internship"
+    experience = Column(String, nullable=False)  # e.g., "Entry", "Mid", "Senior"
+    salary = Column(Integer, nullable=True)  # in USD or appropriate unit
+    company = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    posted_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Integer, default=1)
 
     applications = relationship("Application", back_populates="job", cascade="all, delete-orphan")
@@ -40,6 +45,8 @@ class Profile(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    full_name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
 
     job_title = Column(String, nullable=False)
     resume_filename = Column(String, nullable=True)
@@ -51,7 +58,7 @@ class Profile(Base):
     career_level = Column(String, nullable=True)
     work_type = Column(String, nullable=True)
 
-    application_date = Column(DateTime(timezone=True), server_default=func.now())
+    profile_date = Column(DateTime(timezone=True), server_default=func.now())
     payment_status = Column(String, default="Pending", nullable=False)
 
     user = relationship("User", back_populates="profile")
@@ -64,5 +71,13 @@ class Application(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
 
+    application_date = Column(DateTime(timezone=True), server_default=func.now())
+    status = Column(String, default="Submitted", nullable=False)
+    cover_letter = Column(Text, nullable=True)
+
     user = relationship("User", back_populates="applications")
     job = relationship("Job", back_populates="applications")
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'job_id', name='unique_user_job'),
+    )
