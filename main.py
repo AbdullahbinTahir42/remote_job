@@ -353,7 +353,8 @@ def get_current_user_info(current_user: models.User = Depends(get_current_active
         "id": current_user.id,
         "email": current_user.email,
         "full_name": current_user.full_name,
-        "profile_status": current_user.profile_status
+        "profile_status": current_user.profile_status,
+        "role" : current_user.role
     }
 
 @app.post("/applications/", response_model=schemas.S_Application)
@@ -386,3 +387,66 @@ def apply_to_job(
     db.refresh(new_application)
 
     return new_application
+
+
+@app.get("/admin/stats", tags=["Admin"])
+def stats(db: Session = Depends(get_db)):
+    total_users = db.query(models.User).count()
+    total_jobs = db.query(models.Job).count()
+    total_applications = db.query(models.Application).count()
+    total_profiles = db.query(models.Profile).count()
+    print(f"Total Users: {total_users}, Total Jobs: {total_jobs}, Total Applications: {total_applications}, Total Profiles: {total_profiles}")
+    return {
+    "users": total_users,
+    "jobs": total_jobs,
+    "applications": total_applications,
+    "profiles": total_profiles
+    }
+
+
+@app.get("/admin/users", tags=["Admin"])
+def get_users(db: Session = Depends(get_db)): 
+    user = db.query(models.User).filter(models.User.role != 'admin').all()  # Exclude admin users
+    return user
+
+@app.get("/admin/jobs", tags=["Admin"])
+def get_jobs(db: Session = Depends(get_db)):
+
+    return db.query(models.Job).all()
+
+
+@app.post("/admin/jobs", tags=["Admin"])
+def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
+    new_job = models.Job(**job.dict())
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    return new_job
+
+@app.delete("/admin/jobs/{job_id}", tags=["Admin"])
+def delete_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(models.Job).filter(models.Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    db.delete(job)
+    db.commit()
+    return {"message": "Job deleted"}
+
+
+# admin.py or routes/admin/job_routes.py
+
+@app.post("/admin/jobs", response_model=schemas.S_Job, tags=["Admin"])
+def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
+    db_job = models.Job(
+        title=job.title,
+        location=job.location,
+        company=job.company,
+        salary=job.salary,
+        type=job.type,
+        experience=job.experience,
+        description=job.description,
+    )
+    db.add(db_job)
+    db.commit()
+    db.refresh(db_job)
+    return db_job
