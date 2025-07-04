@@ -45,7 +45,7 @@ class S_User(UserBase):
 class JobBase(BaseModel):
     """Shared fields used in job-related schemas."""
     title: str
-    mode: str
+    location: str
     type: str  # Full-time, Part-time, etc.
     experience: str  # Entry, Mid, Senior, etc.
     salary: Optional[int] = None

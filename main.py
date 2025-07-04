@@ -3,6 +3,9 @@ import json
 import io
 from datetime import timedelta, datetime
 from typing import List
+import re
+
+
 
 # --- Third-party libraries ---
 from dotenv import load_dotenv
@@ -244,35 +247,37 @@ def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), admin_user
     return db_job
 
 
-from sqlalchemy import or_
+
 
 @app.get("/user_jobs/", response_model=List[schemas.S_Job])
 def get_user_related_jobs(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    profile = current_user.profile  # assuming relationship exists
+    profile = current_user.profile
 
     if not profile or (not profile.job_title and not profile.skills):
         return []
 
-    job_title = profile.job_title.lower()
-    skill_list = [skill.strip().lower() for skill in profile.skills.split(",") if skill.strip()]
-
+    filters = []
     query = db.query(models.Job)
 
-    filters = []
+    def extract_keywords(text):
+        # Convert to lowercase and extract words only (no punctuation)
+        words = re.findall(r'\b\w+\b', text.lower())
+        return set(words)
 
-    # Match job title
-    if job_title:
-        filters.append(models.Job.title.ilike(f"%{job_title}%"))
+    title_keywords = extract_keywords(profile.job_title or "")
+    skill_keywords = set()
+    for skill in (profile.skills or "").split(","):
+        skill_keywords.update(extract_keywords(skill))
 
-    # Match any skill in job description or title
-    for skill in skill_list:
-        filters.append(models.Job.description.ilike(f"%{skill}%"))
-        filters.append(models.Job.title.ilike(f"%{skill}%"))
+    all_keywords = title_keywords.union(skill_keywords)
 
-    # Combine filters with OR
+    for keyword in all_keywords:
+        filters.append(models.Job.title.ilike(f"%{keyword}%"))
+        filters.append(models.Job.description.ilike(f"%{keyword}%"))
+
     jobs = query.filter(or_(*filters)).all()
     return jobs
 
@@ -350,3 +355,34 @@ def get_current_user_info(current_user: models.User = Depends(get_current_active
         "full_name": current_user.full_name,
         "profile_status": current_user.profile_status
     }
+
+@app.post("/applications/", response_model=schemas.S_Application)
+def apply_to_job(
+    application: schemas.ApplicationCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    # Check if job exists
+    job = db.query(models.Job).filter(models.Job.id == application.job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Optional: Prevent duplicate applications
+    existing_application = db.query(models.Application).filter(
+        models.Application.user_id == current_user.id,
+        models.Application.job_id == application.job_id
+    ).first()
+    if existing_application:
+        raise HTTPException(status_code=400, detail="Already applied to this job")
+
+    # Create new application
+    new_application = models.Application(
+        user_id=current_user.id,
+        job_id=application.job_id,
+        cover_letter=application.cover_letter
+    )
+    db.add(new_application)
+    db.commit()
+    db.refresh(new_application)
+
+    return new_application
