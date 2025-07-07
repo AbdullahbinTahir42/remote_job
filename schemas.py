@@ -32,10 +32,11 @@ class UserLogin(BaseModel):
 
 
 class S_User(UserBase):
-    """Schema for returning user data (excluding password)."""
     id: int
     role: str
-    resume_filename: Optional[str] = None  # Can be removed if not used anymore
+    resume_filename: Optional[str] = None
+    profile_id: Optional[int] = None
+    payment_status: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -48,7 +49,7 @@ class JobBase(BaseModel):
     location: str
     type: str  # Full-time, Part-time, etc.
     experience: str  # Entry, Mid, Senior, etc.
-    salary: Optional[int] = None
+    salary: Optional[str] = None
     company: str
     description: Optional[str] = None
 
@@ -138,3 +139,19 @@ class S_Application(ApplicationBase):
 
     class Config:
         from_attributes = True
+
+class ApplicationOut(BaseModel):
+    id: int
+    user_email: str
+    full_name: str
+    job_title: str
+    status: str
+    application_date: datetime
+    cover_letter: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class PaymentRequest(BaseModel):
+    profile_id: int

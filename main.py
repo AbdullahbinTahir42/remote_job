@@ -13,7 +13,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session,joinedload
 from jose import JWTError, jwt
 from sqlalchemy import or_, func
 
@@ -403,12 +403,6 @@ def stats(db: Session = Depends(get_db)):
     "profiles": total_profiles
     }
 
-
-@app.get("/admin/users", tags=["Admin"])
-def get_users(db: Session = Depends(get_db)): 
-    user = db.query(models.User).filter(models.User.role != 'admin').all()  # Exclude admin users
-    return user
-
 @app.get("/admin/jobs", tags=["Admin"])
 def get_jobs(db: Session = Depends(get_db)):
 
@@ -450,3 +444,78 @@ def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_job)
     return db_job
+
+
+
+
+@app.post("/admin/payment/done")
+def payment_done(
+    payment: schemas.PaymentRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+
+
+    profile = db.query(models.Profile).filter(models.Profile.id == payment.profile_id).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found for this user")
+
+    profile.payment_status = "Paid"
+    db.commit()
+
+    return {"message": "Payment successful", "profile_id": profile.id}
+
+
+
+@app.get("/admin/profiles")
+def get_profiles(db: Session = Depends(get_db)):
+    return db.query(models.Profile).all()
+
+
+@app.get("/admin/applications", response_model=List[schemas.ApplicationOut])
+def get_applications(db: Session = Depends(get_db)):
+    applications = db.query(models.Application).all()
+    
+    # Collect custom response
+    result = []
+    for app in applications:
+        result.append({
+            "id": app.id,
+            "user_email": app.user.email,
+            "full_name": app.user.full_name,
+            "job_title": app.job.title,
+            "status": app.status,
+            "application_date": app.application_date,
+            "cover_letter": app.cover_letter,
+        })
+    return result
+
+@app.post("/payment/submit")
+async def submit_payment(
+    name: str = Form(...),
+    email: str = Form(...),
+    method: str = Form(...),
+    termsAccepted: bool = Form(...),
+    receipt: UploadFile = File(...)
+):
+    if not termsAccepted:
+        raise HTTPException(status_code=400, detail="Terms must be accepted.")
+
+    # 🧾 Save receipt if needed
+    file_location = f"uploads/receipts/{receipt.filename}"
+    with open(file_location, "wb") as f:
+        f.write(await receipt.read())
+
+    # ✅ You can store this info in a database here
+    # e.g., create Payment(name=name, email=email, ...)
+
+    return {
+        "message": "Payment submitted successfully",
+        "data": {
+            "name": name,
+            "email": email,
+            "method": method,
+            "receipt": receipt.filename,
+        }
+    }

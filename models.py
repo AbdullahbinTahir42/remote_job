@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime,UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime,UniqueConstraint, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -15,7 +15,7 @@ class Job(Base):
     location = Column(String, nullable=False)  # e.g., "New York", "Remote"
     type = Column(String, nullable=False)  # e.g., "Full-time", "Part-time", "Internship"
     experience = Column(String, nullable=False)  # e.g., "Entry", "Mid", "Senior"
-    salary = Column(Integer, nullable=True)  # in USD or appropriate unit
+    salary = Column(String, nullable=True)  # in USD or appropriate unit
     company = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     posted_at = Column(DateTime, default=datetime.utcnow)
@@ -82,3 +82,17 @@ class Application(Base):
     __table_args__ = (
         UniqueConstraint('user_id', 'job_id', name='unique_user_job'),
     )
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    method = Column(String, nullable=False)
+    receipt_name = Column(String, nullable=False)
+    terms_accepted = Column(Boolean, default=False)
+
+    profile = relationship("Profile", back_populates="payment")
