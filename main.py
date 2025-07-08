@@ -45,8 +45,8 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-RESUME_UPLOAD_DIR = "resumes" # Directory to store uploaded resumes
-
+RESUME_UPLOAD_DIR = "resumes"
+RECEIPT_UPLOAD_DIR = "receipts"
 
 # --- CORS Middleware ---
 # This allows your frontend (e.g., running on localhost:3000) to communicate with your backend
@@ -491,24 +491,56 @@ def get_applications(db: Session = Depends(get_db)):
         })
     return result
 
+
+
+
 @app.post("/payment/submit")
 async def submit_payment(
     name: str = Form(...),
     email: str = Form(...),
     method: str = Form(...),
     termsAccepted: bool = Form(...),
-    receipt: UploadFile = File(...)
-):
+    receipt: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):  
+    if db.query(models.Payment).filter(models.Payment.email == email).first():
+        raise HTTPException(status_code=400, detail="Payment already exists for this email.")
     if not termsAccepted:
         raise HTTPException(status_code=400, detail="Terms must be accepted.")
 
-    # 🧾 Save receipt if needed
-    file_location = f"uploads/receipts/{receipt.filename}"
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if not user.profile:
+        raise HTTPException(status_code=404, detail="User profile not found. Please create a profile first.")
+
+    user.profile.payment_status = "Verifying"  # Update profile payment status to "Verifying"
+    # ✅ Generate custom filename
+    ext = receipt.filename.split(".")[-1]
+    safe_name = user.full_name.replace(" ", "_")
+    new_filename = f"{safe_name}_{user.id}.{ext}"
+
+    # ✅ Ensure directory exists
+    os.makedirs(RECEIPT_UPLOAD_DIR, exist_ok=True)
+
+    # ✅ Save file
+    file_location = os.path.join(RECEIPT_UPLOAD_DIR, new_filename)
     with open(file_location, "wb") as f:
         f.write(await receipt.read())
 
-    # ✅ You can store this info in a database here
-    # e.g., create Payment(name=name, email=email, ...)
+    # ✅ Save payment info to DB
+    payment = models.Payment(
+        profile_id=user.profile.id,
+        name=name,
+        email=email,
+        method=method,
+        receipt_name=new_filename,  # ⬅ only filename saved
+        terms_accepted=termsAccepted
+    )
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
 
     return {
         "message": "Payment submitted successfully",
@@ -516,6 +548,19 @@ async def submit_payment(
             "name": name,
             "email": email,
             "method": method,
-            "receipt": receipt.filename,
+            "receipt": new_filename,
         }
     }
+
+# ✅ Add in your FastAPI backend if not already present
+@app.get("/admin/payments/users")
+def get_user_payments(db: Session = Depends(get_db)):
+    # Query payments where related profile's payment_status is "Verifying"
+    payments = (
+        db.query(models.Payment)
+        .join(models.Profile, models.Payment.profile_id == models.Profile.id)
+        .filter(models.Profile.payment_status == "Verifying")
+        .all()
+    )
+    # Return empty list if no payments found
+    return payments

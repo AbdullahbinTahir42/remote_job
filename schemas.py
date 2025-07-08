@@ -155,3 +155,13 @@ class ApplicationOut(BaseModel):
 
 class PaymentRequest(BaseModel):
     profile_id: int
+
+
+class PaymentCreate(BaseModel):
+    name: str
+    email: str
+    method: str
+    terms_accepted: bool
+
+    class Config:
+        from_attributes = True

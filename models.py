@@ -63,6 +63,8 @@ class Profile(Base):
     payment_status = Column(String, default="Pending", nullable=False)
 
     user = relationship("User", back_populates="profile")
+    payment = relationship("Payment", back_populates="profile", uselist=False)
+
 
 
 class Application(Base):
