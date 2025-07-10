@@ -160,6 +160,7 @@ class PaymentRequest(BaseModel):
 class PaymentCreate(BaseModel):
     name: str
     email: str
+    plan: str
     method: str
     terms_accepted: bool
 

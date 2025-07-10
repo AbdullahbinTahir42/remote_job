@@ -93,6 +93,7 @@ class Payment(Base):
     profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
+    plan = Column(String,nullable=False)
     method = Column(String, nullable=False)
     receipt_name = Column(String, nullable=False)
     terms_accepted = Column(Boolean, default=False)

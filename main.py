@@ -354,8 +354,10 @@ def get_current_user_info(current_user: models.User = Depends(get_current_active
         "email": current_user.email,
         "full_name": current_user.full_name,
         "profile_status": current_user.profile_status,
-        "role" : current_user.role
+        "role": current_user.role,
+        "payment": current_user.profile.payment_status if current_user.profile else None,
     }
+
 
 @app.post("/applications/", response_model=schemas.S_Application)
 def apply_to_job(
@@ -498,6 +500,7 @@ def get_applications(db: Session = Depends(get_db)):
 async def submit_payment(
     name: str = Form(...),
     email: str = Form(...),
+    plan: str = Form(...) ,
     method: str = Form(...),
     termsAccepted: bool = Form(...),
     receipt: UploadFile = File(...),
@@ -534,6 +537,7 @@ async def submit_payment(
         profile_id=user.profile.id,
         name=name,
         email=email,
+        plan=plan,
         method=method,
         receipt_name=new_filename,  # ⬅ only filename saved
         terms_accepted=termsAccepted
