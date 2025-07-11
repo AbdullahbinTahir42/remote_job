@@ -556,15 +556,18 @@ async def submit_payment(
         }
     }
 
+
 # ✅ Add in your FastAPI backend if not already present
 @app.get("/admin/payments/users")
-def get_user_payments(db: Session = Depends(get_db)):
-    # Query payments where related profile's payment_status is "Verifying"
-    payments = (
-        db.query(models.Payment)
-        .join(models.Profile, models.Payment.profile_id == models.Profile.id)
-        .filter(models.Profile.payment_status == "Verifying")
-        .all()
-    )
-    # Return empty list if no payments found
-    return payments
+def get_verifying_users_with_payment_plan(db: Session = Depends(get_db)):
+    profiles = db.query(models.Profile).filter(models.Profile.payment_status == "Verifying").all()
+    users = []
+    for profile in profiles:
+        user = {
+            "id": profile.user.id,
+            "email": profile.user.email,
+            "full_name": profile.user.full_name,
+            "plan": profile.payment.plan if profile.payment else None,
+        }
+        users.append(user)
+    return users
