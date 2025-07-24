@@ -147,7 +147,7 @@ class ApplicationOut(BaseModel):
     job_title: str
     status: str
     application_date: datetime
-    cover_letter: Optional[str]
+    resume_filename: Optional[str]
 
     class Config:
         from_attributes = True
