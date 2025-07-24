@@ -1,18 +1,28 @@
 import os
 import json
 import io
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import List
 import re
+<<<<<<< HEAD
 import logging
 from pathlib import Path
+=======
+
+
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
 
 # --- Third-party libraries ---
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, APIRouter, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
+<<<<<<< HEAD
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm,HTTPBearer
+=======
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
 from sqlalchemy.orm import Session,joinedload
 from jose import JWTError, jwt
 from sqlalchemy import or_
@@ -32,16 +42,33 @@ from striprtf.striprtf import rtf_to_text
 import google.generativeai as genai
 
 # --- Project-specific imports ---
+<<<<<<< HEAD
 # Make sure all these files are in the same 'remote_job' directory
 # --- Project-specific imports ---
 from . import models
 from . import schemas
 from .auth import get_password_hash, verify_password, create_access_token,        oauth2_scheme, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES   
 from .database import SessionLocal, engine
+=======
+# Imports for models and schemas are consolidated
+import models
+import schemas
+# Assuming 'auth.py' and 'database.py' exist and are correctly configured
+# You will need to create an 'auth.py' file with these functions
+from auth import get_password_hash, verify_password, create_access_token, oauth2_scheme, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from database import SessionLocal, engine
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
 
 # --- Initial Setup ---
 load_dotenv()
 
+<<<<<<< HEAD
+=======
+# Create all database tables based on your models
+#models.Base.metadata.drop_all(bind=engine)
+models.Base.metadata.create_all(bind=engine)
+  # Clear existing data for a fresh start
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -50,6 +77,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("AUTH_DEBUG")
 
+<<<<<<< HEAD
 # --- DEPLOYMENT BEST PRACTICE: Commented out create_all ---
 # In production, you should manage your database with a migration tool like Alembic.
 # Running `create_all` on every startup can be risky.
@@ -80,11 +108,19 @@ os.makedirs(RECEIPT_UPLOAD_DIR, exist_ok=True)
 app.mount(f"/{RESUME_UPLOAD_DIR}", StaticFiles(directory=RESUME_UPLOAD_DIR), name="resumes")
 app.mount(f"/{RECEIPT_UPLOAD_DIR}", StaticFiles(directory=RECEIPT_UPLOAD_DIR), name="receipts")
 
+=======
+RESUME_UPLOAD_DIR = "resumes"
+RECEIPT_UPLOAD_DIR = "receipts"
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
 
 # --- CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,
+<<<<<<< HEAD
     allow_origins=["https://hr.growvy.online"],  # Corrected: No trailing slash
+=======
+    allow_origins=["http://localhost:5173"],  # 👈 Match your frontend exactly
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept","Origin","X-Requested-With"],
@@ -96,6 +132,7 @@ try:
 except Exception as e:
     print(f"Warning: Could not configure Gemini API. Resume analysis may not work. Error: {e}")
 
+    
 # --- Dependencies ---
 def get_db():
     db = SessionLocal()
@@ -249,6 +286,7 @@ async def extract_text_from_bytes(content: bytes, filename: str) -> str:
             raise ValueError("Extracted text is empty, the document might be an image-based file or blank.")
         return text
     except Exception as e:
+<<<<<<< HEAD
         logger.error(f"Failed to extract text from {filename}: {e}", exc_info=True)
         # Provide a more specific error message to the user
         raise HTTPException(status_code=500, detail=f"Could not process file '{filename}'. It might be corrupted, password-protected, or in an unreadable format.")
@@ -257,6 +295,11 @@ async def extract_text_from_bytes(content: bytes, filename: str) -> str:
         
 async def analyze_resume_with_gemini(resume_text: str) -> dict:
     # ... (code for analyze_resume_with_gemini remains the same)
+=======
+        raise HTTPException(status_code=500, detail=f"Could not process file {filename}: {e}")
+    
+async def analyze_resume_with_gemini(resume_text: str) -> dict:
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
     if not resume_text:
         return {}
     if not os.getenv("GEMINI_API_KEY"):
@@ -289,6 +332,7 @@ async def analyze_resume_with_gemini(resume_text: str) -> dict:
         print(f"Error calling Gemini API: {e}")
         return {"error": f"Failed to analyze resume with AI: {e}"}
 
+<<<<<<< HEAD
 # ==============================================================================
 # --- API ROUTERS for Better Organization ---
 # ==============================================================================
@@ -300,16 +344,40 @@ auth_router = APIRouter(tags=["Authentication & Users"])
 @auth_router.post("/register", response_model=schemas.S_User)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     
+=======
+# --- API Endpoints ---
+@app.post("/register/", response_model=schemas.S_User, tags=["Authentication"])
+def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """Registers a new user, hashes their password, and sets default roles."""
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
     if get_user(db, email=user.email):
         raise HTTPException(status_code=400, detail="Email already registered")
     db_user = models.User(
+<<<<<<< HEAD
         email=user.email, full_name=user.full_name, phone_number=user.phone_number,
         hashed_password=get_password_hash(user.password), role='candidate'
+=======
+        email=user.email,
+        full_name=user.full_name,
+        phone_number=user.phone_number,
+        hashed_password=get_password_hash(user.password),
+        role='candidate' # All new users are candidates by default
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
+<<<<<<< HEAD
+=======
+
+@app.post("/token", response_model=schemas.Token, tags=["Authentication"])
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """Handles user login and returns a JWT access token."""
+    user = get_user(db, email=form_data.username)
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
     
 @auth_router.post("/token", response_model=schemas.Token)
 async def login(data: schemas.UserLogin, db: Session = Depends(get_db)):
@@ -323,7 +391,11 @@ async def login(data: schemas.UserLogin, db: Session = Depends(get_db)):
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+<<<<<<< HEAD
 @auth_router.get("/users/me", response_model=schemas.S_User)
+=======
+@app.get("/users/me/", response_model=schemas.S_User, tags=["Users"])
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
 async def read_current_user(current_user: models.User = Depends(get_current_active_user)):
     return current_user
 
@@ -853,6 +925,7 @@ async def submit_payment(
         raise HTTPException(status_code=500, detail="Internal server error during payment processing.")
 
 
+<<<<<<< HEAD
 # --- Admin Router ---
 admin_router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(get_current_admin_user)])
 
@@ -870,12 +943,18 @@ def get_jobs(db: Session = Depends(get_db)):
 
 @admin_router.post("/jobs", response_model=schemas.S_Job)
 def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
+=======
+@app.post("/jobs/", response_model=schemas.S_Job, tags=["Jobs (Admin)"])
+def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), admin_user: models.User = Depends(get_current_admin_user)):
+    """Creates a new job posting. Requires admin privileges."""
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
     db_job = models.Job(**job.model_dump())
     db.add(db_job)
     db.commit()
     db.refresh(db_job)
     return db_job
 
+<<<<<<< HEAD
 @admin_router.delete("/jobs/{job_id}")
 def delete_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(models.Job).filter(models.Job.id == job_id).first()
@@ -888,6 +967,220 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
 @admin_router.post("/payment/done")
 def payment_done(payment: schemas.PaymentRequest, db: Session = Depends(get_db)):
     # Correctly filter by the ID from the payment object
+=======
+
+
+
+@app.get("/user_jobs/", response_model=List[schemas.S_Job])
+def get_user_related_jobs(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    profile = current_user.profile
+
+    if not profile or (not profile.job_title and not profile.skills):
+        return []
+
+    filters = []
+    query = db.query(models.Job)
+
+    def extract_keywords(text):
+        # Convert to lowercase and extract words only (no punctuation)
+        words = re.findall(r'\b\w+\b', text.lower())
+        return set(words)
+
+    title_keywords = extract_keywords(profile.job_title or "")
+    skill_keywords = set()
+    for skill in (profile.skills or "").split(","):
+        skill_keywords.update(extract_keywords(skill))
+
+    all_keywords = title_keywords.union(skill_keywords)
+
+    for keyword in all_keywords:
+        filters.append(models.Job.title.ilike(f"%{keyword}%"))
+        filters.append(models.Job.description.ilike(f"%{keyword}%"))
+
+    jobs = query.filter(or_(*filters)).all()
+    return jobs
+
+
+@app.post("/profiles/", response_model= schemas.CreateProfile)
+def Create_Profile(
+    profile_data: schemas.NewProfile,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    # Normalize job title for case-insensitive search
+    job_title = profile_data.job_title.strip().lower()
+    current_user.profile_status = "YES"
+    existing_profile = current_user.profile
+    if existing_profile:
+        db.delete(existing_profile)
+        db.commit()
+
+    # Create and store the new application
+    # --- Previous code in your API endpoint ---
+
+# Create and store the new application
+    salary_string = None
+    if profile_data.salary_expectation:
+    # Format the salary object into a single string
+        salary_string = f"{profile_data.salary_expectation.amount} {profile_data.salary_expectation.type}"
+
+    db_profile = models.Profile(
+        
+        user_id=current_user.id,
+        full_name=current_user.full_name,
+        email=current_user.email,
+    
+    # Correctly assign the formatted string to the database column
+        salary_expectation=salary_string,
+        job_title= job_title,
+        skills=",".join(profile_data.skills),
+        remote_type=profile_data.remote_type,
+        location=profile_data.location,
+        benefits=",".join(profile_data.benefits) if profile_data.benefits else None,
+        career_level=profile_data.career_level,
+        work_type=profile_data.work_type,
+        resume_filename=current_user.resume_filename if current_user.resume_filename else None,
+    # You can remove application_date and status as they have default values in the model
+        )
+
+    db.add(db_profile)
+    db.commit()
+    db.refresh(db_profile)
+
+    return db_profile
+
+    
+
+
+
+
+@app.get("/profile/")
+def get_profile(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Fetches the profile of the currently authenticated user."""
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return profile
+
+
+@app.get("/me")
+def get_current_user_info(current_user: models.User = Depends(get_current_active_user)):
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "profile_status": current_user.profile_status,
+        "role": current_user.role,
+        "payment": current_user.profile.payment_status if current_user.profile else None,
+    }
+
+
+@app.post("/applications/", response_model=schemas.S_Application)
+def apply_to_job(
+    application: schemas.ApplicationCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    # Check if job exists
+    job = db.query(models.Job).filter(models.Job.id == application.job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Optional: Prevent duplicate applications
+    existing_application = db.query(models.Application).filter(
+        models.Application.user_id == current_user.id,
+        models.Application.job_id == application.job_id
+    ).first()
+    if existing_application:
+        raise HTTPException(status_code=400, detail="Already applied to this job")
+
+    # Create new application
+    new_application = models.Application(
+        user_id=current_user.id,
+        job_id=application.job_id,
+        cover_letter=application.cover_letter
+    )
+    db.add(new_application)
+    db.commit()
+    db.refresh(new_application)
+
+    return new_application
+
+
+@app.get("/admin/stats", tags=["Admin"])
+def stats(db: Session = Depends(get_db)):
+    total_users = db.query(models.User).count()
+    total_jobs = db.query(models.Job).count()
+    total_applications = db.query(models.Application).count()
+    total_profiles = db.query(models.Profile).count()
+    print(f"Total Users: {total_users}, Total Jobs: {total_jobs}, Total Applications: {total_applications}, Total Profiles: {total_profiles}")
+    return {
+    "users": total_users,
+    "jobs": total_jobs,
+    "applications": total_applications,
+    "profiles": total_profiles
+    }
+
+@app.get("/admin/jobs", tags=["Admin"])
+def get_jobs(db: Session = Depends(get_db)):
+
+    return db.query(models.Job).all()
+
+
+@app.post("/admin/jobs", tags=["Admin"])
+def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
+    new_job = models.Job(**job.dict())
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    return new_job
+
+@app.delete("/admin/jobs/{job_id}", tags=["Admin"])
+def delete_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(models.Job).filter(models.Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    db.delete(job)
+    db.commit()
+    return {"message": "Job deleted"}
+
+
+# admin.py or routes/admin/job_routes.py
+
+@app.post("/admin/jobs", response_model=schemas.S_Job, tags=["Admin"])
+def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
+    db_job = models.Job(
+        title=job.title,
+        location=job.location,
+        company=job.company,
+        salary=job.salary,
+        type=job.type,
+        experience=job.experience,
+        description=job.description,
+    )
+    db.add(db_job)
+    db.commit()
+    db.refresh(db_job)
+    return db_job
+
+
+
+
+@app.post("/admin/payment/done")
+def payment_done(
+    payment: schemas.PaymentRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+
+
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c
     profile = db.query(models.Profile).filter(models.Profile.id == payment.profile_id).first()
 
     if not profile:
@@ -898,6 +1191,7 @@ def payment_done(payment: schemas.PaymentRequest, db: Session = Depends(get_db))
 
     return {"message": "Payment successful", "profile_id": profile.id}
 
+<<<<<<< HEAD
 @admin_router.get("/profiles")
 def get_profiles(db: Session = Depends(get_db)):
     return db.query(models.Profile).all()
@@ -939,3 +1233,108 @@ app.include_router(admin_router)
 @app.get("/")
 def home():
     return "Hello There!!! The API is running."
+=======
+
+
+@app.get("/admin/profiles")
+def get_profiles(db: Session = Depends(get_db)):
+    return db.query(models.Profile).all()
+
+
+@app.get("/admin/applications", response_model=List[schemas.ApplicationOut])
+def get_applications(db: Session = Depends(get_db)):
+    applications = db.query(models.Application).all()
+    
+    # Collect custom response
+    result = []
+    for app in applications:
+        result.append({
+            "id": app.id,
+            "user_email": app.user.email,
+            "full_name": app.user.full_name,
+            "job_title": app.job.title,
+            "status": app.status,
+            "application_date": app.application_date,
+            "cover_letter": app.cover_letter,
+        })
+    return result
+
+
+
+
+@app.post("/payment/submit")
+async def submit_payment(
+    name: str = Form(...),
+    email: str = Form(...),
+    plan: str = Form(...) ,
+    method: str = Form(...),
+    termsAccepted: bool = Form(...),
+    receipt: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):  
+    if db.query(models.Payment).filter(models.Payment.email == email).first():
+        raise HTTPException(status_code=400, detail="Payment already exists for this email.")
+    if not termsAccepted:
+        raise HTTPException(status_code=400, detail="Terms must be accepted.")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if not user.profile:
+        raise HTTPException(status_code=404, detail="User profile not found. Please create a profile first.")
+
+    user.profile.payment_status = "Verifying"  # Update profile payment status to "Verifying"
+    # ✅ Generate custom filename
+    ext = receipt.filename.split(".")[-1]
+    safe_name = user.full_name.replace(" ", "_")
+    new_filename = f"{safe_name}_{user.id}.{ext}"
+
+    # ✅ Ensure directory exists
+    os.makedirs(RECEIPT_UPLOAD_DIR, exist_ok=True)
+
+    # ✅ Save file
+    file_location = os.path.join(RECEIPT_UPLOAD_DIR, new_filename)
+    with open(file_location, "wb") as f:
+        f.write(await receipt.read())
+
+    # ✅ Save payment info to DB
+    payment = models.Payment(
+        profile_id=user.profile.id,
+        name=name,
+        email=email,
+        plan=plan,
+        method=method,
+        receipt_name=new_filename,  # ⬅ only filename saved
+        terms_accepted=termsAccepted
+    )
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
+
+    return {
+        "message": "Payment submitted successfully",
+        "data": {
+            "name": name,
+            "email": email,
+            "method": method,
+            "receipt": new_filename,
+        }
+    }
+
+
+# ✅ Add in your FastAPI backend if not already present
+@app.get("/admin/payments/users")
+def get_verifying_users_with_payment_plan(db: Session = Depends(get_db)):
+    profiles = db.query(models.Profile).filter(models.Profile.payment_status == "Verifying").all()
+    users = []
+    for profile in profiles:
+        user = {
+            "id": profile.user.id,
+            "email": profile.user.email,
+            "full_name": profile.user.full_name,
+            "plan": profile.payment.plan if profile.payment else None,
+        }
+        users.append(user)
+    return users
+>>>>>>> c9dcec5bf1a9598736b7d568b3324fe1f7cfcd4c

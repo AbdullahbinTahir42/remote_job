@@ -48,7 +48,8 @@ def create_admin_user():
             full_name=full_name,
             email=email,
             hashed_password=hashed_password,
-            role='admin'  # Set the role directly to 'admin'
+            role='admin',
+            profile_status="YES"  # Set the role directly to 'admin'
         )
         
         db.add(admin_user)

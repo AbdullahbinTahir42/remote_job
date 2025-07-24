@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime,UniqueConstraint, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -10,13 +11,18 @@ class Job(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
-    mode = Column(String, nullable=False)
-    location = Column(String, default="Remote")
+    mode = Column(String, default="Remote") 
+    location = Column(String, nullable=False)  # e.g., "New York", "Remote"
+    type = Column(String, nullable=False)  # e.g., "Full-time", "Part-time", "Internship"
+    experience = Column(String, nullable=False)  # e.g., "Entry", "Mid", "Senior"
+    salary = Column(String, nullable=True)  # in USD or appropriate unit
+    company = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    posted_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Integer, default=1)
 
-    # ✅ Add this:
     applications = relationship("Application", back_populates="job", cascade="all, delete-orphan")
+
 
 class User(Base):
     __tablename__ = "users"
@@ -26,29 +32,70 @@ class User(Base):
     full_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, nullable=False)
-
     phone_number = Column(String, nullable=True)
-
-    # ✅ New: Store resume filename
     resume_filename = Column(String, nullable=True)
+    profile_status = Column(String, default="No", nullable=False)  # ✅ New column
 
-    # ✅ Applications relationship
+
+    profile = relationship("Profile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="user", cascade="all, delete-orphan")
+
+
+class Profile(Base):
+    __tablename__ = "profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    full_name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+
+    job_title = Column(String, nullable=False)
+    resume_filename = Column(String, nullable=True)
+    salary_expectation = Column(String, nullable=True)
+    skills = Column(Text, nullable=True)  # comma-separated
+    remote_type = Column(Text, nullable=True)
+    location = Column(String, nullable=True)
+    benefits = Column(Text, nullable=True)
+    career_level = Column(String, nullable=True)
+    work_type = Column(String, nullable=True)
+
+    profile_date = Column(DateTime(timezone=True), server_default=func.now())
+    payment_status = Column(String, default="Pending", nullable=False)
+
+    user = relationship("User", back_populates="profile")
+    payment = relationship("Payment", back_populates="profile", uselist=False)
+
 
 
 class Application(Base):
     __tablename__ = "applications"
 
     id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
 
-    resume_filename = Column(String, nullable=True)  # Store the filename of the resume
-    salary_expectation = Column(String, nullable=True)
-    skills = Column(Text, nullable=False)
     application_date = Column(DateTime(timezone=True), server_default=func.now())
-    status = Column(String, default="Pending Payment", nullable=False)
-    payment_intent_id = Column(String, unique=True, nullable=True)
+    status = Column(String, default="Submitted", nullable=False)
+    cover_letter = Column(Text, nullable=True)
 
-    job = relationship("Job", back_populates="applications")
     user = relationship("User", back_populates="applications")
+    job = relationship("Job", back_populates="applications")
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'job_id', name='unique_user_job'),
+    )
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    plan = Column(String,nullable=False)
+    method = Column(String, nullable=False)
+    receipt_name = Column(String, nullable=False)
+    terms_accepted = Column(Boolean, default=False)
+
+    profile = relationship("Profile", back_populates="payment")

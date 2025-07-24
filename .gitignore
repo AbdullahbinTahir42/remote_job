@@ -13,4 +13,6 @@ __pycache__/
 
 
 resumes/
-
+alembic/
+alembic.ini
+receipts/
